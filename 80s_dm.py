@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 # Created on 2017-11-01 14:44:52
-# Project: 80s_ju
+# Project: 80s_dm
 
 import re
 from pyspider.libs.base_handler import *
 
-START_PAGE = 'http://www.80s.tw/ju/list/----0--p'
+START_PAGE = 'http://www.80s.tw/dm/list/----14--p'
 PAGE_NUM = 1
 PAGE_TOTAL = 1
-# PAGE_TOTAL = 130
+# PAGE_TOTAL = 61
 
 
 class Handler(BaseHandler):
@@ -40,22 +40,22 @@ class Handler(BaseHandler):
         title, year, latest_update, special_list, special_list_link, update_period, other_names, actors, actors_link = self.format.format_brief_info(
             response)
 
-        #print(title)
-        #print(year)
-        #print(latest_update)
+        print('=======')
+        print(title)
+        print(year)
+        print(latest_update)
+        print(special_list)
+        print(special_list_link)
+        print(update_period)
+        print(other_names)
+        print(actors)
+        print(actors_link)
 
-        #print(special_list)
-        #print(special_list_link)
-        #print(update_period)
-        #print(other_names)
-        #print(actors)
-        #print(actors_link)
-
-        type, type_link, region, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = self.format.format_detail_info(
+        type, region, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = self.format.format_detail_info(
             response)
 
+        print('=======')
         print(type)
-        print(type_link)
         print(region)
         print(directors)
         print(directors_link)
@@ -118,6 +118,7 @@ class Format:
             i.children().attr.href for i in res.doc('.dlbutton1').items()
         ]
 
+        print('=======')
         print(row_title)
         print(len(row_title))
         print(format_title)
@@ -167,12 +168,6 @@ class Format:
             actors = info_span[3].split('：')[1].strip()
             actors = '/'.join(actors.split(' '))
             actors_link = info_span_link[0:]
-
-
-
-        latest_update = "".join(info_span[0].split('： ')[1].split())
-
-
         return title, year, latest_update, special_list, special_list_link, update_period, other_names, actors, actors_link
 
     def format_detail_info(self, res):
@@ -187,17 +182,16 @@ class Format:
 
         type_list = span_block[0].split('： ')[1].split(' ')
         type = '/'.join(type_list)
-        type_link = span_block_link[:len(type_list)]
 
-        region = '/'.join(span_block[1].split('： ')[1].split(' '))
+        region = "/".join(span_block[1].split('： ')[1].split())
 
         directors = '/'.join(span_block[2].split('： ')[1].split(' '))
-        directors_link = span_block_link[len(type_list):len(type_list) + 1]
+        directors_link = span_block_link[0]
 
         created_at = span_block[3].split('： ')[1]
         item_length = span_block[4].split('： ')[1]
         updated_at = span_block[5].split('： ')[1]
         douban_rate = span_block[6].split('： ')[1]
-        douban_comment_link = span_block_link[-1]
+        douban_comment_link = span_block_link[1]
         movie_content = res.doc('#movie_content').text().split('： ')[1].strip()
-        return type, type_link, region, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content
+        return type, region, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content

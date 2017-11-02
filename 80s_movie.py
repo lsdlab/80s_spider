@@ -4,6 +4,7 @@
 # Project: 80s_movie
 
 import re
+import json
 from pyspider.libs.base_handler import *
 
 START_PAGE = 'http://www.80s.tw/movie/list/-----p'
@@ -37,43 +38,54 @@ class Handler(BaseHandler):
 
     @config(priority=2)
     def detail_page(self, response):
-        title, year, site_desc, special_list, special_list_link, other_names, actors, actors_link = self.format.format_brief_info(
-            response)
+        # title, year, site_desc, special_list, special_list_link, other_names, actors, actors_link = self.format.format_brief_info(
+        #     response)
 
-        print(title)
-        print(year)
-        print(site_desc)
-        print(special_list)
-        print(special_list_link)
-        print(other_names)
-        print(actors)
-        print(actors_link)
+        self.format.construct_brief_json(self.format.format_brief_info(response))
 
-        type, type_link, region, region_link, language, language_link, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = self.format.format_detail_info(
-            response)
+        # print(title)
+        # print(year)
+        # print(site_desc)
+        # print(special_list)
+        # print(special_list_link)
+        # print(other_names)
+        # print(actors)
+        # print(actors_link)
 
-        print(type)
-        print(type_link)
-        print(region)
-        print(region_link)
-        print(language)
-        print(language_link)
-        print(directors)
-        print(directors_link)
-        print(created_at)
-        print(updated_at)
-        print(item_length)
-        print(douban_rate)
-        print(douban_comment_link)
-        print(movie_content)
+
+        # type, type_link, region, region_link, language, language_link, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = self.format.format_detail_info(
+        #     response)
+
+        self.format.construct_detail_json(self.format.format_detail_info(response))
+
+
+        # print(type)
+        # print(type_link)
+        # print(region)
+        # print(region_link)
+        # print(language)
+        # print(language_link)
+        # print(directors)
+        # print(directors_link)
+        # print(created_at)
+        # print(updated_at)
+        # print(item_length)
+        # print(douban_rate)
+        # print(douban_comment_link)
+        # print(movie_content)
 
         # 第一个 tab bt 直接能解析，其他的 tab 需要爬单独的 html 再解析
         # http://www.80s.tw/movie/1173/bt-1 bd-1 hd-1
-        row_title, format_title, format_size, download_link = self.format.get_download_info(
-            response)
+        # row_title, format_title, format_size, download_link = self.format.get_download_info(
+        #     response)
+
+        self.format.construct_download_json(self.format.get_download_info(response))
 
         self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
         self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
+
+        self.item_json['url'] = response.url
+        self.item_json['title'] = response.doc('title').text()
 
         return {
             "url": response.url,
@@ -86,6 +98,7 @@ class Handler(BaseHandler):
             row_title, format_title, format_size, download_link = self.format.get_download_info(
                 response)
 
+
     @config(priority=2)
     def get_hd_info(self, response):
         if response.status_code == 200:
@@ -95,7 +108,7 @@ class Handler(BaseHandler):
 
 class Format:
     def __init__(self):
-        pass
+        self.item_json = {}
 
     def get_download_info(self, res):
         # 电影原始名称 电视 赛车总动员 4.2 G 需要处理
@@ -107,7 +120,10 @@ class Format:
         format_size = []
         for i in row_title:
             size_re = re.search(r"\d*\.\d*.?[G|GB|M|MB]", i)
-            size = ''.join(size_re.group(0).split(' '))
+            if size_re:
+                size = ''.join(size_re.group(0).split(' '))
+            else:
+                size = ''
             format_size.append(size)
         #format_size = [i.split(' ')[2] for i in row_title]
 
@@ -191,3 +207,43 @@ class Format:
         douban_comment_link = span_block_link[-1]
         movie_content = res.doc('#movie_content').text().split('： ')[1].strip()
         return type, type_link, region, region_link, language, language_link, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content
+
+    def construct_brief_json(self, *args):
+        self.item_json['brief_info'] = {}
+        self.item_json['brief_info']['title'] = args[0]
+        self.item_json['brief_info']['year'] = args[1]
+        self.item_json['brief_info']['site_desc'] = args[2]
+        self.item_json['brief_info']['special_list'] = args[3]
+        self.item_json['brief_info']['special_list_link'] = args[4]
+        self.item_json['brief_info']['other_names'] = args[5]
+        self.item_json['brief_info']['actors'] = args[6]
+        self.item_json['brief_info']['actors_link'] = args[7]
+
+    def construct_detail_json(self, *args):
+        self.item_json['detail_info'] = {}
+        self.item_json['detail_info']['type'] = args[0]
+        self.item_json['detail_info']['type_link'] = args[1]
+        self.item_json['detail_info']['region'] = args[2]
+        self.item_json['detail_info']['region_link'] = args[3]
+        self.item_json['detail_info']['language'] = args[4]
+        self.item_json['detail_info']['language_link'] = args[5]
+        self.item_json['detail_info']['directors'] = args[6]
+        self.item_json['detail_info']['directors_link'] = args[7]
+        self.item_json['detail_info']['created_at'] = args[8]
+        self.item_json['detail_info']['updated_at'] = args[9]
+        self.item_json['detail_info']['item_length'] = args[10]
+        self.item_json['detail_info']['douban_rate'] = args[11]
+        self.item_json['detail_info']['douban_comment_link'] = args[12]
+        self.item_json['detail_info']['movie_content'] = args[13]
+
+    def construct_download_json(self, *args):
+        self.item_json['download_json'] = {}
+        self.item_json['download_json']['row_title'] = args[0]
+        self.item_json['download_json']['format_title'] = args[1]
+        self.item_json['download_json']['format_size'] = args[2]
+        self.item_json['download_json']['download_link'] = args[3]
+
+    def write_to_json(self, data):
+        file_name = data['url']
+        with open(file_name, 'w') as outfile:
+            json.dump(data, outfile)

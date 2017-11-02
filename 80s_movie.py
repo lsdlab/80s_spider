@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 # Created on 2017-11-01 14:44:52
-# Project: 80stw
+# Project: 80s_movie
 
 import re
 from pyspider.libs.base_handler import *
@@ -9,6 +9,7 @@ from pyspider.libs.base_handler import *
 START_PAGE = 'http://www.80s.tw/movie/list/-----p'
 PAGE_NUM = 1
 PAGE_TOTAL = 1
+# PAGE_TOTAL = 408
 
 
 class Handler(BaseHandler):

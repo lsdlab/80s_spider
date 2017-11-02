@@ -10,6 +10,7 @@ from pyspider.libs.base_handler import *
 START_PAGE = 'http://www.80s.tw/movie/list/-----p'
 PAGE_NUM = 1
 PAGE_TOTAL = 1
+
 # PAGE_TOTAL = 408
 
 
@@ -20,7 +21,7 @@ class Handler(BaseHandler):
         self.start_page = START_PAGE
         self.page_num = PAGE_NUM
         self.page_total = PAGE_TOTAL
-        self.format = Format()
+        self.item_json = {}
 
     @every(minutes=24 * 60)
     def on_start(self):
@@ -38,10 +39,10 @@ class Handler(BaseHandler):
 
     @config(priority=2)
     def detail_page(self, response):
-        # title, year, site_desc, special_list, special_list_link, other_names, actors, actors_link = self.format.format_brief_info(
+        # title, year, site_desc, special_list, special_list_link, other_names, actors, actors_link = self.format_brief_info(
         #     response)
 
-        self.format.construct_brief_json(self.format.format_brief_info(response))
+        self.construct_brief_json(self.format_brief_info(response))
 
         # print(title)
         # print(year)
@@ -52,12 +53,10 @@ class Handler(BaseHandler):
         # print(actors)
         # print(actors_link)
 
-
-        # type, type_link, region, region_link, language, language_link, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = self.format.format_detail_info(
+        # type, type_link, region, region_link, language, language_link, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = self.format_detail_info(
         #     response)
 
-        self.format.construct_detail_json(self.format.format_detail_info(response))
-
+        self.construct_detail_json(self.format_detail_info(response))
 
         # print(type)
         # print(type_link)
@@ -76,16 +75,19 @@ class Handler(BaseHandler):
 
         # 第一个 tab bt 直接能解析，其他的 tab 需要爬单独的 html 再解析
         # http://www.80s.tw/movie/1173/bt-1 bd-1 hd-1
-        # row_title, format_title, format_size, download_link = self.format.get_download_info(
+        # row_title, format_title, format_size, download_link = self.get_download_info(
         #     response)
 
-        self.format.construct_download_json(self.format.get_download_info(response))
 
+
+        self.item_json["url"] = response.url
+        self.item_json["title"] = response.doc('title').text()
+        self.write_brief_info_to_json(self.item_json)
+
+        # 三种大小
+        self.crawl(response.url + "/bt-1", callback=self.get_bt_info)
         self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
         self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
-
-        self.item_json['url'] = response.url
-        self.item_json['title'] = response.doc('title').text()
 
         return {
             "url": response.url,
@@ -93,22 +95,30 @@ class Handler(BaseHandler):
         }
 
     @config(priority=2)
+    def get_bt_info(self, response):
+        if response.status_code == 200:
+            # row_title, format_title, format_size, download_link = self.get_download_info(
+            #     response)
+            self.construct_download_json(self.get_download_info(response), mark='bt')
+            print('--------------')
+            print(self.item_json)
+            self.write_download_info_to_json(self.item_json)
+
+    @config(priority=2)
     def get_bd_info(self, response):
         if response.status_code == 200:
-            row_title, format_title, format_size, download_link = self.format.get_download_info(
-                response)
-
+            # row_title, format_title, format_size, download_link = self.get_download_info(
+            #     response)
+            self.construct_download_json(self.get_download_info(response), mark='bd')
+            self.write_download_info_to_json(self.item_json)
 
     @config(priority=2)
     def get_hd_info(self, response):
         if response.status_code == 200:
-            row_title, format_title, format_size, download_link = self.format.get_download_info(
-                response)
-
-
-class Format:
-    def __init__(self):
-        self.item_json = {}
+            # row_title, format_title, format_size, download_link = self.get_download_info(
+            #     response)
+            self.construct_download_json(self.get_download_info(response), mark='hd')
+            self.write_download_info_to_json(self.item_json)
 
     def get_download_info(self, res):
         # 电影原始名称 电视 赛车总动员 4.2 G 需要处理
@@ -209,41 +219,58 @@ class Format:
         return type, type_link, region, region_link, language, language_link, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content
 
     def construct_brief_json(self, *args):
-        self.item_json['brief_info'] = {}
-        self.item_json['brief_info']['title'] = args[0]
-        self.item_json['brief_info']['year'] = args[1]
-        self.item_json['brief_info']['site_desc'] = args[2]
-        self.item_json['brief_info']['special_list'] = args[3]
-        self.item_json['brief_info']['special_list_link'] = args[4]
-        self.item_json['brief_info']['other_names'] = args[5]
-        self.item_json['brief_info']['actors'] = args[6]
-        self.item_json['brief_info']['actors_link'] = args[7]
+        print('===')
+        print(args)
+        self.item_json["brief_info"] = {}
+        self.item_json["brief_info"]["title"] = args[0][0]
+        self.item_json["brief_info"]["year"] = args[0][1]
+        self.item_json["brief_info"]["site_desc"] = args[0][2]
+        self.item_json["brief_info"]["special_list"] = args[0][3]
+        self.item_json["brief_info"]["special_list_link"] = args[0][4]
+        self.item_json["brief_info"]["other_names"] = args[0][5]
+        self.item_json["brief_info"]["actors"] = args[0][6]
+        self.item_json["brief_info"]["actors_link"] = args[0][7]
 
     def construct_detail_json(self, *args):
-        self.item_json['detail_info'] = {}
-        self.item_json['detail_info']['type'] = args[0]
-        self.item_json['detail_info']['type_link'] = args[1]
-        self.item_json['detail_info']['region'] = args[2]
-        self.item_json['detail_info']['region_link'] = args[3]
-        self.item_json['detail_info']['language'] = args[4]
-        self.item_json['detail_info']['language_link'] = args[5]
-        self.item_json['detail_info']['directors'] = args[6]
-        self.item_json['detail_info']['directors_link'] = args[7]
-        self.item_json['detail_info']['created_at'] = args[8]
-        self.item_json['detail_info']['updated_at'] = args[9]
-        self.item_json['detail_info']['item_length'] = args[10]
-        self.item_json['detail_info']['douban_rate'] = args[11]
-        self.item_json['detail_info']['douban_comment_link'] = args[12]
-        self.item_json['detail_info']['movie_content'] = args[13]
+        self.item_json["detail_info"] = {}
+        self.item_json["detail_info"]["type"] = args[0][0]
+        self.item_json["detail_info"]["type_link"] = args[0][1]
+        self.item_json["detail_info"]["region"] = args[0][2]
+        self.item_json["detail_info"]["region_link"] = args[0][3]
+        self.item_json["detail_info"]["language"] = args[0][4]
+        self.item_json["detail_info"]["language_link"] = args[0][5]
+        self.item_json["detail_info"]["directors"] = args[0][6]
+        self.item_json["detail_info"]["directors_link"] = args[0][7]
+        self.item_json["detail_info"]["created_at"] = args[0][8]
+        self.item_json["detail_info"]["updated_at"] = args[0][9]
+        self.item_json["detail_info"]["item_length"] = args[0][10]
+        self.item_json["detail_info"]["douban_rate"] = args[0][11]
+        self.item_json["detail_info"]["douban_comment_link"] = args[0][12]
+        self.item_json["detail_info"]["movie_content"] = args[0][13]
 
-    def construct_download_json(self, *args):
-        self.item_json['download_json'] = {}
-        self.item_json['download_json']['row_title'] = args[0]
-        self.item_json['download_json']['format_title'] = args[1]
-        self.item_json['download_json']['format_size'] = args[2]
-        self.item_json['download_json']['download_link'] = args[3]
+    def construct_download_json(self, *args, **kwargs):
+        mark = kwargs['mark']
+        self.item_json["download_info"] = {}
+        self.item_json["download_info"][mark] = {}
+        self.item_json["download_info"]["row_title"] = args[0][0]
+        self.item_json["download_info"]["format_title"] = args[0][1]
+        self.item_json["download_info"]["format_size"] = args[0][2]
+        self.item_json["download_json"]["download_link"] = args[0][3]
 
-    def write_to_json(self, data):
-        file_name = data['url']
-        with open(file_name, 'w') as outfile:
-            json.dump(data, outfile)
+    def write_brief_info_to_json(self, data):
+        file_name = data['url'].split('/')[-2] + '_' + data['url'].split('/')[
+            -1] + '.json'
+        print('========')
+        print(file_name)
+        with open("/Users/Chen/Desktop/pyspider_example/" + file_name,
+                  'w') as f:
+            json.dump(data, f)
+
+    def write_download_info_to_json(self, data):
+        file_name = data['url'].split('/')[-2] + '_' + data['url'].split('/')[
+            -1] + '.json'
+        print('========')
+        print(file_name)
+        with open("/Users/Chen/Desktop/pyspider_example/" + file_name,
+                  'wb') as f:
+            json.dump(data, f)

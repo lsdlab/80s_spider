@@ -267,6 +267,8 @@ class Handler(BaseHandler):
         self.item_json["brief_info"]["actors_link"] = args[0][7]
         self.item_json["brief_info"]["header_img_link"] = args[0][8]
         self.item_json["brief_info"]["screenshot_link"] = args[0][9]
+        self.item_json["brief_info"]["total"] = 1
+        self.item_json["brief_info"]["current"] = 1
 
     def construct_detail_json(self, *args):
         self.item_json["detail_info"] = {}
@@ -339,3 +341,17 @@ class Handler(BaseHandler):
 
         with open("/Users/Chen/Desktop/pyspider_example/json/" + file_name, 'w') as f:
             json.dump(basic_info, f)
+
+from pyspider.result import ResultWorker
+from pymongo import MongoClient
+client = MongoClient('localhost', 27017)
+class MyResultWorker(ResultWorker):
+    def on_result(self, task, result):
+        assert task['taskid']
+        assert task['project']
+        assert task['url']
+        assert result
+        # save data to mongdb
+        db_name = task['project']
+        db = client.db_name
+        db.data.insert(result)

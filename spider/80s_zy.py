@@ -262,6 +262,15 @@ class Handler(BaseHandler):
         self.item_json["brief_info"]["header_img_link"] = args[0][9]
         self.item_json["brief_info"]["screenshot_link"] = args[0][10]
 
+        total_current_re = re.search(r"第(\d*)集/共(\d*)集", args[0][2])
+        if total_current_re:
+            self.item_json["brief_info"]["current"] = total_current_re.group(0)
+            self.item_json["brief_info"]["total"] = total_current_re.group(1)
+
+        current_re = re.search(r"第(\d*)集", args[0][2])
+        if current_re:
+            self.item_json["brief_info"]["current"] = current_re.group(0)
+
     def construct_detail_json(self, *args):
         self.item_json["detail_info"] = {}
         self.item_json["detail_info"]["type"] = args[0][0]

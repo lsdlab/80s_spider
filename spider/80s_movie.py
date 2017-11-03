@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
-# Created on 2017-11-01 14:44:52
-# Project: 80s_movie
+# Created on 2017-11-03 10:56:36
+# Project: 80s_movie_final
 
 import re
 import json
@@ -10,7 +10,6 @@ from pyspider.libs.base_handler import *
 START_PAGE = 'http://www.80s.tw/movie/list/-----p'
 PAGE_NUM = 1
 PAGE_TOTAL = 1
-
 # PAGE_TOTAL = 408
 
 
@@ -35,11 +34,11 @@ class Handler(BaseHandler):
     def index_page(self, response):
         for each in response.doc('.h3 > a').items():
             print(each.attr.href)
-            self.crawl(each.attr.href, callback=self.detail_page)
+            self.crawl(each.attr.href, callback=self.detail_page, fetch_type='js')
 
     @config(priority=2)
     def detail_page(self, response):
-        # title, year, site_desc, special_list, special_list_link, other_names, actors, actors_link = self.format_brief_info(
+        # title, year, site_desc, special_list, special_list_link, other_names, actors, actors_link, header_img_link, screenshot_link = self.format_brief_info(
         #     response)
 
         self.construct_brief_json(self.format_brief_info(response))
@@ -52,6 +51,8 @@ class Handler(BaseHandler):
         # print(other_names)
         # print(actors)
         # print(actors_link)
+        # print(header_img_link)
+        # print(screenshot_link)
 
         # type, type_link, region, region_link, language, language_link, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = self.format_detail_info(
         #     response)
@@ -76,16 +77,24 @@ class Handler(BaseHandler):
         # 第一个 tab bt 直接能解析，其他的 tab 需要爬单独的 html 再解析
         # http://www.80s.tw/movie/1173/bt-1 bd-1 hd-1
         # row_title, format_title, format_size, download_link = self.get_download_info(
-        #     response)
+            # response)
 
-
+        mark_re = re.search(r"电视|平板|手机", response.doc('.dlselected > span').text())
+        if mark_re.group(0) == '电视':
+            mark = 'bt'
+        elif mark_re.group(0) == '平板':
+            mark = 'bt'
+        elif mark_re.group(0) == '手机':
+            mark = 'hd'
+        self.construct_download_json(self.get_download_info(response), mark=mark)
+        self.write_default_download_info_to_json(self.item_json, response)
 
         self.item_json["url"] = response.url
         self.item_json["title"] = response.doc('title').text()
         self.write_brief_info_to_json(self.item_json)
 
         # 三种大小
-        self.crawl(response.url + "/bt-1", callback=self.get_bt_info)
+        # self.crawl(response.url + "/bt-1", callback=self.get_bt_info)
         self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
         self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
 
@@ -102,7 +111,7 @@ class Handler(BaseHandler):
             self.construct_download_json(self.get_download_info(response), mark='bt')
             print('--------------')
             print(self.item_json)
-            self.write_download_info_to_json(self.item_json)
+            self.write_download_info_to_json(self.item_json, response)
 
     @config(priority=2)
     def get_bd_info(self, response):
@@ -110,7 +119,7 @@ class Handler(BaseHandler):
             # row_title, format_title, format_size, download_link = self.get_download_info(
             #     response)
             self.construct_download_json(self.get_download_info(response), mark='bd')
-            self.write_download_info_to_json(self.item_json)
+            self.write_download_info_to_json(self.item_json, response)
 
     @config(priority=2)
     def get_hd_info(self, response):
@@ -118,7 +127,7 @@ class Handler(BaseHandler):
             # row_title, format_title, format_size, download_link = self.get_download_info(
             #     response)
             self.construct_download_json(self.get_download_info(response), mark='hd')
-            self.write_download_info_to_json(self.item_json)
+            self.write_download_info_to_json(self.item_json, response)
 
     def get_download_info(self, res):
         # 电影原始名称 电视 赛车总动员 4.2 G 需要处理
@@ -129,7 +138,7 @@ class Handler(BaseHandler):
         # 格式化后的文件大小列表
         format_size = []
         for i in row_title:
-            size_re = re.search(r"\d*\.\d*.?[G|GB|M|MB]", i)
+            size_re = re.search(r"\d.\d*\.\d*.?[G|GB|M|MB]|\d*\.\d*.?[G|GB|M|MB]", i)
             if size_re:
                 size = ''.join(size_re.group(0).split(' '))
             else:
@@ -156,6 +165,15 @@ class Handler(BaseHandler):
         year = year_re.group(0)
         # 名称
         title = res.doc('.font14w').text()
+        # 题图
+        header_img_link = res.doc('.img > img').attr.src
+        print('header_img')
+        print(header_img_link)
+        # 截图
+        screenshot_link = res.doc('.noborder > img').attr.src
+        print('screenshot_link')
+        print(screenshot_link)
+
 
         # 80s 的描述，专题，又名，演员 字符串列表和对应的链接
         info_span = [i.text() for i in res.doc('.info > span').items()]
@@ -168,7 +186,17 @@ class Handler(BaseHandler):
         print(info_span_link)
 
         site_desc = info_span[0]
-        if len(info_span) > 3:
+        print(len(info_span))
+        if len(info_span) == 2:
+            special_list = ''
+            special_list_link = ''
+            other_names = ''
+            actors = ''
+            actors_link = ''
+            actors = info_span[1].split('：')[1].strip()
+            actors = '/'.join(actors.split(' '))
+            actors_link = info_span_link[1:]
+        elif len(info_span) > 3:
             special_list = info_span[1].split('：')[1].strip()
             special_list_link = info_span_link[0]
             other_names = info_span[2].split('：')[1].strip()
@@ -184,7 +212,7 @@ class Handler(BaseHandler):
             actors = info_span[2].split('：')[1].strip()
             actors = '/'.join(actors.split(' '))
             actors_link = info_span_link[1:]
-        return title, year, site_desc, special_list, special_list_link, other_names, actors, actors_link
+        return title, year, site_desc, special_list, special_list_link, other_names, actors, actors_link, header_img_link, screenshot_link
 
     def format_detail_info(self, res):
         # 类型、地区、语言、剧情介绍等信息的字符串列表和链接
@@ -206,20 +234,28 @@ class Handler(BaseHandler):
         language = '/'.join(span_block[2].split('： ')[1].split(' '))
         language_link = span_block_link[len(type_list) + 1:len(type_list) + 2]
 
-        directors = '/'.join(span_block[3].split('： ')[1].split(' '))
-        directors_link = span_block_link[len(type_list) + 2:len(
-            type_list) + 2 + len(span_block[3].split('： ')[1].split(' '))]
-
-        created_at = span_block[4].split('： ')[1]
-        item_length = span_block[5].split('： ')[1]
-        updated_at = span_block[6].split('： ')[1]
-        douban_rate = span_block[7].split('： ')[1]
+        if type == '舞台艺术':
+            # 舞台艺术没有导演
+            directors = ''
+            directors_link = []
+            created_at = span_block[3].split('： ')[1]
+            item_length = span_block[4].split('： ')[1]
+            updated_at = span_block[5].split('： ')[1]
+            douban_rate = span_block[6].split('： ')[1]
+        else:
+            directors = '/'.join(span_block[3].split('： ')[1].split(' '))
+            directors_link = span_block_link[len(type_list) + 2:len(
+                type_list) + 2 + len(span_block[3].split('： ')[1].split(' '))]
+            created_at = span_block[4].split('： ')[1]
+            item_length = span_block[5].split('： ')[1]
+            updated_at = span_block[6].split('： ')[1]
+        douban_rate = str(span_block[-2:-1]).split('： ')[1]
         douban_comment_link = span_block_link[-1]
         movie_content = res.doc('#movie_content').text().split('： ')[1].strip()
         return type, type_link, region, region_link, language, language_link, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content
 
     def construct_brief_json(self, *args):
-        print('===')
+        print('========')
         print(args)
         self.item_json["brief_info"] = {}
         self.item_json["brief_info"]["title"] = args[0][0]
@@ -230,6 +266,8 @@ class Handler(BaseHandler):
         self.item_json["brief_info"]["other_names"] = args[0][5]
         self.item_json["brief_info"]["actors"] = args[0][6]
         self.item_json["brief_info"]["actors_link"] = args[0][7]
+        self.item_json["brief_info"]["header_img_link"] = args[0][8]
+        self.item_json["brief_info"]["screenshot_link"] = args[0][9]
 
     def construct_detail_json(self, *args):
         self.item_json["detail_info"] = {}
@@ -252,25 +290,53 @@ class Handler(BaseHandler):
         mark = kwargs['mark']
         self.item_json["download_info"] = {}
         self.item_json["download_info"][mark] = {}
-        self.item_json["download_info"]["row_title"] = args[0][0]
-        self.item_json["download_info"]["format_title"] = args[0][1]
-        self.item_json["download_info"]["format_size"] = args[0][2]
-        self.item_json["download_json"]["download_link"] = args[0][3]
+        self.item_json["download_info"][mark]["row_title"] = args[0][0]
+        self.item_json["download_info"][mark]["format_title"] = args[0][1]
+        self.item_json["download_info"][mark]["format_size"] = args[0][2]
+        self.item_json["download_info"][mark]["download_link"] = args[0][3]
 
     def write_brief_info_to_json(self, data):
         file_name = data['url'].split('/')[-2] + '_' + data['url'].split('/')[
             -1] + '.json'
-        print('========')
-        print(file_name)
-        with open("/Users/Chen/Desktop/pyspider_example/" + file_name,
+        # print('==========')
+        # print(file_name)
+        with open("/Users/Chen/Desktop/pyspider_example/json/" + file_name,
                   'w') as f:
             json.dump(data, f)
 
-    def write_download_info_to_json(self, data):
-        file_name = data['url'].split('/')[-2] + '_' + data['url'].split('/')[
+    def write_default_download_info_to_json(self, data, res):
+        print('data')
+        print(data)
+        print('res')
+        print(res)
+        file_name = res.url.split('/')[-2] + '_' + res.url.split('/')[
             -1] + '.json'
-        print('========')
+        print('==========')
         print(file_name)
-        with open("/Users/Chen/Desktop/pyspider_example/" + file_name,
-                  'wb') as f:
+        with open("/Users/Chen/Desktop/pyspider_example/json/" + file_name, 'w') as f:
             json.dump(data, f)
+
+    def write_download_info_to_json(self, data, res):
+        print('data')
+        print(data)
+        print('res')
+        print(res)
+        file_name = res.url.split('/')[-3] + '_' + res.url.split('/')[
+            -2] + '.json'
+        print('==========')
+        print(file_name)
+        with open("/Users/Chen/Desktop/pyspider_example/json/" + file_name, 'r') as f:
+            basic_info = json.load(f)
+            print('basic_info')
+            print(basic_info)
+
+            if res.url.split('/')[-1] == 'bt-1':
+                mark = 'bt'
+            elif res.url.split('/')[-1] == 'bd-1':
+                mark = 'bd'
+            elif res.url.split('/')[-1] == 'hd-1':
+                mark = 'hd'
+            basic_info['download_info'][mark] = data
+
+        with open("/Users/Chen/Desktop/pyspider_example/json/" + file_name, 'w') as f:
+            json.dump(basic_info, f)

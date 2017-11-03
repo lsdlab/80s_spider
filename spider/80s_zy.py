@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
-# Created on 2017-11-03 10:56:36
-# Project: 80s_movie_final
+# Created on 2017-11-01 14:44:52
+# Project: 80s_dm
 
 import re
 import json
 from pyspider.libs.base_handler import *
 
-START_PAGE = 'http://www.80s.tw/movie/list/-----p'
+START_PAGE = 'http://www.80s.tw/zy/list/----4--p'
 PAGE_NUM = 1
 PAGE_TOTAL = 1
-# PAGE_TOTAL = 408
+# PAGE_TOTAL = 17
 
 
 class Handler(BaseHandler):
@@ -38,23 +38,24 @@ class Handler(BaseHandler):
 
     @config(priority=2)
     def detail_page(self, response):
-        # title, year, site_desc, special_list, special_list_link, other_names, actors, actors_link, header_img_link, screenshot_link = self.format_brief_info(
+        # title, year, latest_update, update_period, other_names, actors, actors_link = self.format.format_brief_info(
         #     response)
 
         self.construct_brief_json(self.format_brief_info(response))
 
-        # print(title)
-        # print(year)
-        # print(site_desc)
-        # print(special_list)
-        # print(special_list_link)
-        # print(other_names)
-        # print(actors)
-        # print(actors_link)
+        #print(title)
+        #print(year)
+        #print(latest_update)
+        #print(update_period)
+        ##print(special_list)
+        #print(special_list_link)
+        #print(other_names)
+        #print(actors)
+        #print(actors_link)
         # print(header_img_link)
         # print(screenshot_link)
 
-        # type, type_link, region, region_link, language, language_link, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = self.format_detail_info(
+        # type, type_link, region, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = self.format.format_detail_info(
         #     response)
 
         self.construct_detail_json(self.format_detail_info(response))
@@ -62,9 +63,6 @@ class Handler(BaseHandler):
         # print(type)
         # print(type_link)
         # print(region)
-        # print(region_link)
-        # print(language)
-        # print(language_link)
         # print(directors)
         # print(directors_link)
         # print(created_at)
@@ -79,12 +77,14 @@ class Handler(BaseHandler):
         # row_title, format_title, format_size, download_link = self.get_download_info(
             # response)
         mark_re = re.search(r"电视|平板|手机", response.doc('.dlselected > span').text())
-        if mark_re.group(0) == '电视':
-            mark = 'bt'
-        elif mark_re.group(0) == '平板':
-            mark = 'bt'
-        elif mark_re.group(0) == '手机':
-            mark = 'hd'
+        mark = 'other'
+        if mark_re:
+            if mark_re.group(0) == '电视':
+                mark = 'bt'
+            elif mark_re.group(0) == '平板':
+                mark = 'bt'
+            elif mark_re.group(0) == '手机':
+                mark = 'hd'
         self.construct_download_json(self.get_download_info(response), mark=mark)
         self.write_default_download_info_to_json(self.item_json, response)
 
@@ -96,11 +96,6 @@ class Handler(BaseHandler):
         # self.crawl(response.url + "/bt-1", callback=self.get_bt_info)
         self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
         self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
-
-        return {
-            "url": response.url,
-            "title": response.doc('title').text(),
-        }
 
     @config(priority=2)
     def get_bt_info(self, response):
@@ -137,7 +132,7 @@ class Handler(BaseHandler):
         # 格式化后的文件大小列表
         format_size = []
         for i in row_title:
-            size_re = re.search(r"\d.\d*\.\d*.?[G|GB|M|MB]|\d*\.\d*.?[G|GB|M|MB]", i)
+            size_re = re.search(r"\d*\.\d*.?[G|GB|M|MB]", i)
             if size_re:
                 size = ''.join(size_re.group(0).split(' '))
             else:
@@ -151,13 +146,18 @@ class Handler(BaseHandler):
         ]
 
         print(row_title)
+        print(len(row_title))
         print(format_title)
+        print(len(format_title))
         print(format_size)
+        print(len(format_size))
         print(download_link)
+        print(len(download_link))
 
         return row_title, format_title, format_size, download_link
 
     def format_brief_info(self, res):
+        title, year, latest_update, update_period, special_list, special_list_link, other_names, actors, actors_link, header_img_link, screenshot_link = '', '', '', '', '', '', '', '', '', '', ''
         info = res.doc('.info').text()
         # 年份
         year_re = re.search(r"\d{4}", info)
@@ -173,47 +173,43 @@ class Handler(BaseHandler):
         print('screenshot_link')
         print(screenshot_link)
 
-
         # 80s 的描述，专题，又名，演员 字符串列表和对应的链接
         info_span = [i.text() for i in res.doc('.info > span').items()]
         # 第一个是80s的一句话描述，可为空，后面都是演员链接
         info_span_link = [
             i.attr.href for i in res.doc('.info > span > a').items()
         ]
+        i = '; '.join(info_span)
 
         print(info_span)
         print(info_span_link)
 
-        site_desc = info_span[0]
-        print(len(info_span))
-        if len(info_span) == 2:
-            special_list = ''
-            special_list_link = ''
-            other_names = ''
-            actors = ''
-            actors_link = ''
-            actors = info_span[1].split('：')[1].strip()
-            actors = '/'.join(actors.split(' '))
-            actors_link = info_span_link[1:]
-        elif len(info_span) > 3:
-            special_list = info_span[1].split('：')[1].strip()
-            special_list_link = info_span_link[0]
-            other_names = info_span[2].split('：')[1].strip()
-            other_names = '/'.join(other_names.split(' , '))
-            actors = info_span[3].split('：')[1].strip()
-            actors = '/'.join(actors.split(' '))
-            actors_link = info_span_link[1:]
-        else:
-            special_list = ''
-            special_list_link = ''
-            other_names = info_span[1].split('：')[1].strip()
-            other_names = '/'.join(other_names.split(' , '))
-            actors = info_span[2].split('：')[1].strip()
-            actors = '/'.join(actors.split(' '))
-            actors_link = info_span_link[1:]
-        return title, year, site_desc, special_list, special_list_link, other_names, actors, actors_link, header_img_link, screenshot_link
+        # info_span 第一个可能为空，有的电视剧名称前面有个国语粤语标识，这五个信息排版混乱，用正则找
+        for i in info_span:
+            if re.search(r"最近更新", i):
+                latest_update = "".join(i.split('： ')[1].split())
+            elif re.search(r"更新周期", i):
+                update_period = i.split('：')[1].strip()
+            elif re.search(r"又名", i):
+                # 又名可有可无
+                other_names = i.split('：')[1].strip()
+                other_names = '/'.join(other_names.split(' , '))
+            elif re.search(r"专题", i):
+                # 专题也是可有可无
+                special_list = i.split('：')[1].strip()
+                special_list_link = info_span_link[:1]
+            elif re.search(r"演员", i):
+                actors = i.split('：')[1].strip()
+                actors = '/'.join(actors.split(' '))
+                if special_list:
+                    actors_link = info_span_link[1:]
+                else:
+                    actors_link = info_span_link[:]
+
+        return title, year, latest_update, update_period, special_list, special_list_link, other_names, actors, actors_link, header_img_link, screenshot_link
 
     def format_detail_info(self, res):
+        type, type_link, region, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = '', '', '', '', '', '', '', '', '', '', ''
         # 类型、地区、语言、剧情介绍等信息的字符串列表和链接
         span_block = [i.text() for i in res.doc('.span_block').items()]
         span_block_link = [
@@ -223,35 +219,32 @@ class Handler(BaseHandler):
         print(span_block)
         print(span_block_link)
 
-        type_list = span_block[0].split('： ')[1].split(' ')
-        type = '/'.join(type_list)
-        type_link = span_block_link[:len(type_list)]
-
-        region = '/'.join(span_block[1].split('： ')[1].split(' '))
-        region_link = span_block_link[len(type_list):len(type_list) + 1]
-
-        language = '/'.join(span_block[2].split('： ')[1].split(' '))
-        language_link = span_block_link[len(type_list) + 1:len(type_list) + 2]
-
-        if type == '舞台艺术':
-            # 舞台艺术没有导演
-            directors = ''
-            directors_link = []
-            created_at = span_block[3].split('： ')[1]
-            item_length = span_block[4].split('： ')[1]
-            updated_at = span_block[5].split('： ')[1]
-            douban_rate = span_block[6].split('： ')[1]
-        else:
-            directors = '/'.join(span_block[3].split('： ')[1].split(' '))
-            directors_link = span_block_link[len(type_list) + 2:len(
-                type_list) + 2 + len(span_block[3].split('： ')[1].split(' '))]
-            created_at = span_block[4].split('： ')[1]
-            item_length = span_block[5].split('： ')[1]
-            updated_at = span_block[6].split('： ')[1]
-        douban_rate = str(span_block[-2:-1]).split('： ')[1]
-        douban_comment_link = span_block_link[-1]
+        for i in span_block:
+            if re.search(r"类型", i):
+                type_list = i.split('： ')[1].split(' ')
+                type = '/'.join(type_list)
+                if span_block_link:
+                    type_link = span_block_link[:len(type_list)]
+            elif re.search(r"导演", i):
+                # 导演可有可无
+                directors = '/'.join(i.split('： ')[1].split(' '))
+                if span_block_link:
+                    directors_link = span_block_link[len(type_list):len(type_list) + 1]
+            elif re.search(r"地区", i):
+                region = '/'.join(i.split('： ')[1].split(' '))
+            elif re.search(r"上映日期", i):
+                created_at = i.split('： ')[1]
+            elif re.search(r"片长", i):
+                item_length = i.split('： ')[1]
+            elif re.search(r"更新日期", i):
+                updated_at = i.split('： ')[1]
+            elif re.search(r"豆瓣评分", i):
+                douban_rate = i.split('： ')[1]
+        if span_block_link:
+            douban_comment_link = span_block_link[-1]
         movie_content = res.doc('#movie_content').text().split('： ')[1].strip()
-        return type, type_link, region, region_link, language, language_link, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content
+        return type, type_link, region, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content
+
 
     def construct_brief_json(self, *args):
         print('========')
@@ -259,31 +252,29 @@ class Handler(BaseHandler):
         self.item_json["brief_info"] = {}
         self.item_json["brief_info"]["title"] = args[0][0]
         self.item_json["brief_info"]["year"] = args[0][1]
-        self.item_json["brief_info"]["site_desc"] = args[0][2]
-        self.item_json["brief_info"]["special_list"] = args[0][3]
-        self.item_json["brief_info"]["special_list_link"] = args[0][4]
-        self.item_json["brief_info"]["other_names"] = args[0][5]
-        self.item_json["brief_info"]["actors"] = args[0][6]
-        self.item_json["brief_info"]["actors_link"] = args[0][7]
-        self.item_json["brief_info"]["header_img_link"] = args[0][8]
-        self.item_json["brief_info"]["screenshot_link"] = args[0][9]
+        self.item_json["brief_info"]["latest_update"] = args[0][2]
+        self.item_json["brief_info"]["update_period"] = args[0][3]
+        self.item_json["brief_info"]["special_list"] = args[0][4]
+        self.item_json["brief_info"]["special_list_link"] = args[0][5]
+        self.item_json["brief_info"]["other_names"] = args[0][6]
+        self.item_json["brief_info"]["actors"] = args[0][7]
+        self.item_json["brief_info"]["actors_link"] = args[0][8]
+        self.item_json["brief_info"]["header_img_link"] = args[0][9]
+        self.item_json["brief_info"]["screenshot_link"] = args[0][10]
 
     def construct_detail_json(self, *args):
         self.item_json["detail_info"] = {}
         self.item_json["detail_info"]["type"] = args[0][0]
         self.item_json["detail_info"]["type_link"] = args[0][1]
         self.item_json["detail_info"]["region"] = args[0][2]
-        self.item_json["detail_info"]["region_link"] = args[0][3]
-        self.item_json["detail_info"]["language"] = args[0][4]
-        self.item_json["detail_info"]["language_link"] = args[0][5]
-        self.item_json["detail_info"]["directors"] = args[0][6]
-        self.item_json["detail_info"]["directors_link"] = args[0][7]
-        self.item_json["detail_info"]["created_at"] = args[0][8]
-        self.item_json["detail_info"]["updated_at"] = args[0][9]
-        self.item_json["detail_info"]["item_length"] = args[0][10]
-        self.item_json["detail_info"]["douban_rate"] = args[0][11]
-        self.item_json["detail_info"]["douban_comment_link"] = args[0][12]
-        self.item_json["detail_info"]["movie_content"] = args[0][13]
+        self.item_json["detail_info"]["directors"] = args[0][3]
+        self.item_json["detail_info"]["directors_link"] = args[0][4]
+        self.item_json["detail_info"]["created_at"] = args[0][5]
+        self.item_json["detail_info"]["updated_at"] = args[0][6]
+        self.item_json["detail_info"]["item_length"] = args[0][7]
+        self.item_json["detail_info"]["douban_rate"] = args[0][8]
+        self.item_json["detail_info"]["douban_comment_link"] = args[0][9]
+        self.item_json["detail_info"]["movie_content"] = args[0][10]
 
     def construct_download_json(self, *args, **kwargs):
         mark = kwargs['mark']

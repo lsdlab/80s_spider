@@ -36,11 +36,12 @@ class Handler(BaseHandler):
             self.crawl(crawl_url, callback=self.index_page)
             self.page_num += 1
 
-    @config(age=10 * 24 * 60 * 60)
+    @config(age=10 * 24 * 60 * 60, priority=3)
     def index_page(self, response):
         for each in response.doc('.h3 > a').items():
             print(each.attr.href)
-            self.crawl(each.attr.href, callback=self.detail_page, fetch_type='js')
+            self.crawl(
+                each.attr.href, callback=self.detail_page, fetch_type='js')
 
     @config(priority=2)
     def detail_page(self, response):
@@ -74,6 +75,7 @@ class Handler(BaseHandler):
         self.construct_download_json(
             self.get_download_info(response), mark=mark)
 
+        # 两块信息加上第一页的下载信息写入 JSON 和 MONGODB
         if WRITE_JSON:
             self.write_info_to_json(self.item_json, response)
         if WRITE_MONGODB:
@@ -81,6 +83,7 @@ class Handler(BaseHandler):
             self.write_to_mongodb(self.final_json)
 
         # 另外两种大小，可有可无
+        # self.crawl(response.url + "/bt-1", callback=self.get_bt_info)
         self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
         self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
 
@@ -89,25 +92,25 @@ class Handler(BaseHandler):
             "title": response.doc('title').text(),
         }
 
+    # 爬取 bt
+    @config(priority=1)
+    def get_bt_info(self, response):
+        self.crawl_download_info(response, 'bt')
+
     # 爬取 bd
     @config(priority=1)
     def get_bd_info(self, response):
-        if response.status_code == 200:
-            self.construct_download_json(
-                self.get_download_info(response), mark='bd')
-            if WRITE_JSON:
-                self.write_download_info_to_json(self.item_json, response)
-            if WRITE_MONGODB:
-                self.final_json = self.construct_final_download_json(
-                    self.item_json, mark)
-                self.update_download_info_to_mongodb(self.final_json, mark)
+        self.crawl_download_info(response, 'bd')
 
     # 爬取 hd
     @config(priority=1)
     def get_hd_info(self, response):
+        self.crawl_download_info(response, 'hd')
+
+    def crawl_download_info(response, mark):
         if response.status_code == 200:
             self.construct_download_json(
-                self.get_download_info(response), mark='bd')
+                self.get_download_info(response), mark)
             if WRITE_JSON:
                 self.write_download_info_to_json(self.item_json, response)
             if WRITE_MONGODB:
@@ -124,7 +127,8 @@ class Handler(BaseHandler):
         # 格式化后的文件大小列表
         format_size = []
         for i in row_title:
-            size_re = re.search(r"\d.\d*\.\d*.?[G|GB|M|MB]|\d*\.\d*.?[G|GB|M|MB]", i)
+            size_re = re.search(
+                r"\d.\d*\.\d*.?[G|GB|M|MB]|\d*\.\d*.?[G|GB|M|MB]", i)
             if size_re:
                 size = ''.join(size_re.group(0).split(' '))
             else:
@@ -158,7 +162,6 @@ class Handler(BaseHandler):
         screenshot_link = res.doc('.noborder > img').attr.src
         print('screenshot_link')
         print(screenshot_link)
-
 
         # 80s 的描述，专题，又名，演员 字符串列表和对应的链接
         info_span = [i.text() for i in res.doc('.info > span').items()]
@@ -295,7 +298,8 @@ class Handler(BaseHandler):
             -1] + '.json'
         print('==========')
         print(file_name)
-        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name, 'w') as f:
+        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name,
+                  'w') as f:
             json.dump(data, f)
 
     def write_download_info_to_json(self, data, res):
@@ -307,7 +311,8 @@ class Handler(BaseHandler):
             -2] + '.json'
         print('==========')
         print(file_name)
-        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name, 'r') as f:
+        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name,
+                  'r') as f:
             basic_info = json.load(f)
             print('basic_info')
             print(basic_info)
@@ -320,9 +325,9 @@ class Handler(BaseHandler):
                 mark = 'hd'
             basic_info['download_info'][mark] = data
 
-        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name, 'w') as f:
+        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name,
+                  'w') as f:
             json.dump(basic_info, f)
-
 
     def construct_final_json(self, item_json, res):
         m = hashlib.md5()

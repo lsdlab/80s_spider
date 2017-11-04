@@ -5,12 +5,17 @@
 
 import re
 import json
+import hashlib
 from pyspider.libs.base_handler import *
+from model.resource.resource import ResourceRecord
+from model.resource.resource import ResourceSource
+from datetime import datetime
 
 START_PAGE = 'http://www.80s.tw/movie/list/-----p'
 PAGE_NUM = 1
-PAGE_TOTAL = 1
-# PAGE_TOTAL = 408
+PAGE_TOTAL = 408
+WRITE_JSON = True
+WRITE_MONGODB = True
 
 
 class Handler(BaseHandler):
@@ -21,8 +26,9 @@ class Handler(BaseHandler):
         self.page_num = PAGE_NUM
         self.page_total = PAGE_TOTAL
         self.item_json = {}
+        self.final_json = {}
 
-    @every(minutes=24 * 60)
+    @every(minutes=24 * 60 * 3)
     def on_start(self):
         while self.page_num <= self.page_total:
             crawl_url = self.start_page + str(self.page_num)
@@ -38,62 +44,43 @@ class Handler(BaseHandler):
 
     @config(priority=2)
     def detail_page(self, response):
-        # title, year, site_desc, special_list, special_list_link, other_names, actors, actors_link, header_img_link, screenshot_link = self.format_brief_info(
-        #     response)
-
+        # 构建两块信息
         self.construct_brief_json(self.format_brief_info(response))
-
-        # print(title)
-        # print(year)
-        # print(site_desc)
-        # print(special_list)
-        # print(special_list_link)
-        # print(other_names)
-        # print(actors)
-        # print(actors_link)
-        # print(header_img_link)
-        # print(screenshot_link)
-
-        # type, type_link, region, region_link, language, language_link, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = self.format_detail_info(
-        #     response)
-
         self.construct_detail_json(self.format_detail_info(response))
 
-        # print(type)
-        # print(type_link)
-        # print(region)
-        # print(region_link)
-        # print(language)
-        # print(language_link)
-        # print(directors)
-        # print(directors_link)
-        # print(created_at)
-        # print(updated_at)
-        # print(item_length)
-        # print(douban_rate)
-        # print(douban_comment_link)
-        # print(movie_content)
+        if WRITE_JSON:
+            # 先不写，到取得第一部分下载信息的时候一起写进去
+            # self.write_brief_info_to_json(self.item_json)
+            pass
+        if WRITE_MONGODB:
+            self.construct_final_json(self.item_json, response)
 
         # 第一个 tab bt 直接能解析，其他的 tab 需要爬单独的 html 再解析
         # http://www.80s.tw/movie/1173/bt-1 bd-1 hd-1
-        # row_title, format_title, format_size, download_link = self.get_download_info(
-            # response)
-        mark_re = re.search(r"电视|平板|手机", response.doc('.dlselected > span').text())
-        if mark_re.group(0) == '电视':
-            mark = 'bt'
-        elif mark_re.group(0) == '平板':
-            mark = 'bt'
-        elif mark_re.group(0) == '手机':
-            mark = 'hd'
-        self.construct_download_json(self.get_download_info(response), mark=mark)
-        self.write_default_download_info_to_json(self.item_json, response)
+        mark_re = re.search(r"电视|平板|手机",
+                            response.doc('.dlselected > span').text())
+        mark = ''
+        self.final_json["url_has_downlaod"] = []
+        if mark_re:
+            if mark_re.group(0) == '电视':
+                mark = 'bt'
+            elif mark_re.group(0) == '平板':
+                mark = 'bd'
+            elif mark_re.group(0) == '手机':
+                mark = 'hd'
+        self.final_json["url_has_downlaod"].append(mark)
 
-        self.item_json["url"] = response.url
-        self.item_json["title"] = response.doc('title').text()
-        self.write_brief_info_to_json(self.item_json)
+        # 构建第一个下载页面的 JSON 信息
+        self.construct_download_json(
+            self.get_download_info(response), mark=mark)
 
-        # 三种大小
-        # self.crawl(response.url + "/bt-1", callback=self.get_bt_info)
+        if WRITE_JSON:
+            self.write_info_to_json(self.item_json, response)
+        if WRITE_MONGODB:
+            self.construct_final_download_json(self.item_json, mark)
+            self.write_to_mongodb(self.final_json)
+
+        # 另外两种大小，可有可无
         self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
         self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
 
@@ -102,31 +89,31 @@ class Handler(BaseHandler):
             "title": response.doc('title').text(),
         }
 
-    @config(priority=2)
-    def get_bt_info(self, response):
-        if response.status_code == 200:
-            # row_title, format_title, format_size, download_link = self.get_download_info(
-            #     response)
-            self.construct_download_json(self.get_download_info(response), mark='bt')
-            print('--------------')
-            print(self.item_json)
-            self.write_download_info_to_json(self.item_json, response)
-
-    @config(priority=2)
+    # 爬取 bd
+    @config(priority=1)
     def get_bd_info(self, response):
         if response.status_code == 200:
-            # row_title, format_title, format_size, download_link = self.get_download_info(
-            #     response)
-            self.construct_download_json(self.get_download_info(response), mark='bd')
-            self.write_download_info_to_json(self.item_json, response)
+            self.construct_download_json(
+                self.get_download_info(response), mark='bd')
+            if WRITE_JSON:
+                self.write_download_info_to_json(self.item_json, response)
+            if WRITE_MONGODB:
+                self.final_json = self.construct_final_download_json(
+                    self.item_json, mark)
+                self.update_download_info_to_mongodb(self.final_json, mark)
 
-    @config(priority=2)
+    # 爬取 hd
+    @config(priority=1)
     def get_hd_info(self, response):
         if response.status_code == 200:
-            # row_title, format_title, format_size, download_link = self.get_download_info(
-            #     response)
-            self.construct_download_json(self.get_download_info(response), mark='hd')
-            self.write_download_info_to_json(self.item_json, response)
+            self.construct_download_json(
+                self.get_download_info(response), mark='bd')
+            if WRITE_JSON:
+                self.write_download_info_to_json(self.item_json, response)
+            if WRITE_MONGODB:
+                self.final_json = self.construct_final_download_json(
+                    self.item_json, mark)
+                self.update_download_info_to_mongodb(self.final_json, mark)
 
     def get_download_info(self, res):
         # 电影原始名称 电视 赛车总动员 4.2 G 需要处理
@@ -143,7 +130,6 @@ class Handler(BaseHandler):
             else:
                 size = ''
             format_size.append(size)
-        #format_size = [i.split(' ')[2] for i in row_title]
 
         # 下载链接列表
         download_link = [
@@ -248,64 +234,59 @@ class Handler(BaseHandler):
             created_at = span_block[4].split('： ')[1]
             item_length = span_block[5].split('： ')[1]
             updated_at = span_block[6].split('： ')[1]
-        douban_rate = str(span_block[-2:-1]).split('： ')[1]
+            douban_rate = span_block[-2:-1][0].split('： ')[1]
         douban_comment_link = span_block_link[-1]
         movie_content = res.doc('#movie_content').text().split('： ')[1].strip()
         return type, type_link, region, region_link, language, language_link, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content
 
     def construct_brief_json(self, *args):
-        print('========')
-        print(args)
-        self.item_json["brief_info"] = {}
-        self.item_json["brief_info"]["title"] = args[0][0]
-        self.item_json["brief_info"]["year"] = args[0][1]
-        self.item_json["brief_info"]["site_desc"] = args[0][2]
-        self.item_json["brief_info"]["special_list"] = args[0][3]
-        self.item_json["brief_info"]["special_list_link"] = args[0][4]
-        self.item_json["brief_info"]["other_names"] = args[0][5]
-        self.item_json["brief_info"]["actors"] = args[0][6]
-        self.item_json["brief_info"]["actors_link"] = args[0][7]
-        self.item_json["brief_info"]["header_img_link"] = args[0][8]
-        self.item_json["brief_info"]["screenshot_link"] = args[0][9]
-        self.item_json["brief_info"]["total"] = 1
-        self.item_json["brief_info"]["current"] = 1
+        self.item_json["title"] = args[0][0]
+        self.item_json["year"] = args[0][1]
+        self.item_json["site_desc"] = args[0][2]
+        self.item_json["special_list"] = args[0][3]
+        self.item_json["special_list_link"] = args[0][4]
+        self.item_json["other_names"] = args[0][5]
+        self.item_json["actors"] = args[0][6]
+        self.item_json["actors_link"] = args[0][7]
+        self.item_json["header_img_link"] = args[0][8]
+        self.item_json["screenshot_link"] = args[0][9]
+        self.item_json["total"] = 1
+        self.item_json["current"] = 1
 
     def construct_detail_json(self, *args):
-        self.item_json["detail_info"] = {}
-        self.item_json["detail_info"]["type"] = args[0][0]
-        self.item_json["detail_info"]["type_link"] = args[0][1]
-        self.item_json["detail_info"]["region"] = args[0][2]
-        self.item_json["detail_info"]["region_link"] = args[0][3]
-        self.item_json["detail_info"]["language"] = args[0][4]
-        self.item_json["detail_info"]["language_link"] = args[0][5]
-        self.item_json["detail_info"]["directors"] = args[0][6]
-        self.item_json["detail_info"]["directors_link"] = args[0][7]
-        self.item_json["detail_info"]["created_at"] = args[0][8]
-        self.item_json["detail_info"]["updated_at"] = args[0][9]
-        self.item_json["detail_info"]["item_length"] = args[0][10]
-        self.item_json["detail_info"]["douban_rate"] = args[0][11]
-        self.item_json["detail_info"]["douban_comment_link"] = args[0][12]
-        self.item_json["detail_info"]["movie_content"] = args[0][13]
+        self.item_json["type"] = args[0][0]
+        self.item_json["type_link"] = args[0][1]
+        self.item_json["region"] = args[0][2]
+        self.item_json["region_link"] = args[0][3]
+        self.item_json["language"] = args[0][4]
+        self.item_json["language_link"] = args[0][5]
+        self.item_json["directors"] = args[0][6]
+        self.item_json["directors_link"] = args[0][7]
+        self.item_json["created_at"] = args[0][8]
+        self.item_json["updated_at"] = args[0][9]
+        self.item_json["item_length"] = args[0][10]
+        self.item_json["douban_rate"] = args[0][11]
+        self.item_json["douban_comment_link"] = args[0][12]
+        self.item_json["movie_content"] = args[0][13]
 
     def construct_download_json(self, *args, **kwargs):
         mark = kwargs['mark']
-        self.item_json["download_info"] = {}
-        self.item_json["download_info"][mark] = {}
-        self.item_json["download_info"][mark]["row_title"] = args[0][0]
-        self.item_json["download_info"][mark]["format_title"] = args[0][1]
-        self.item_json["download_info"][mark]["format_size"] = args[0][2]
-        self.item_json["download_info"][mark]["download_link"] = args[0][3]
+        self.item_json[mark] = {}
+        self.item_json[mark]["row_title"] = args[0][0]
+        self.item_json[mark]["format_title"] = args[0][1]
+        self.item_json[mark]["format_size"] = args[0][2]
+        self.item_json[mark]["download_link"] = args[0][3]
 
-    def write_brief_info_to_json(self, data):
-        file_name = data['url'].split('/')[-2] + '_' + data['url'].split('/')[
-            -1] + '.json'
-        # print('==========')
-        # print(file_name)
-        with open("/Users/Chen/Desktop/pyspider_example/json/" + file_name,
-                  'w') as f:
-            json.dump(data, f)
+    # def write_brief_info_to_json(self, data):
+    #     file_name = data['url'].split('/')[-2] + '_' + data['url'].split('/')[
+    #         -1] + '.json'
+    #     # print('==========')
+    #     # print(file_name)
+    #     with open("/Users/Chen/Desktop/pyspider_example/json/" + file_name,
+    #               'w') as f:
+    #         json.dump(data, f)
 
-    def write_default_download_info_to_json(self, data, res):
+    def write_info_to_json(self, data, res):
         print('data')
         print(data)
         print('res')
@@ -314,7 +295,7 @@ class Handler(BaseHandler):
             -1] + '.json'
         print('==========')
         print(file_name)
-        with open("/Users/Chen/Desktop/pyspider_example/json/" + file_name, 'w') as f:
+        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name, 'w') as f:
             json.dump(data, f)
 
     def write_download_info_to_json(self, data, res):
@@ -326,7 +307,7 @@ class Handler(BaseHandler):
             -2] + '.json'
         print('==========')
         print(file_name)
-        with open("/Users/Chen/Desktop/pyspider_example/json/" + file_name, 'r') as f:
+        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name, 'r') as f:
             basic_info = json.load(f)
             print('basic_info')
             print(basic_info)
@@ -339,19 +320,69 @@ class Handler(BaseHandler):
                 mark = 'hd'
             basic_info['download_info'][mark] = data
 
-        with open("/Users/Chen/Desktop/pyspider_example/json/" + file_name, 'w') as f:
+        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name, 'w') as f:
             json.dump(basic_info, f)
 
-from pyspider.result import ResultWorker
-from pymongo import MongoClient
-client = MongoClient('localhost', 27017)
-class MyResultWorker(ResultWorker):
-    def on_result(self, task, result):
-        assert task['taskid']
-        assert task['project']
-        assert task['url']
-        assert result
-        # save data to mongdb
-        db_name = task['project']
-        db = client.db_name
-        db.data.insert(result)
+
+    def construct_final_json(self, item_json, res):
+        m = hashlib.md5()
+        m.update(res.url.encode('utf-8'))
+        self.final_json["rtype"] = "电影"
+        self.final_json["hash"] = m.hexdigest()
+        self.final_json["url_source"] = res.url
+        self.final_json["title"] = item_json["title"]
+        self.final_json["sub_title"] = item_json["site_desc"]
+        self.final_json["year"] = item_json["year"]
+        self.final_json["last_update_desc"] = ''
+        self.final_json["update_cycle"] = ''
+        self.final_json["url_image_thumb"] = item_json["header_img_link"]
+        self.final_json["url_image"] = item_json["header_img_link"]
+        self.final_json["show_release_time"] = item_json["created_at"]
+        self.final_json["show_update_time"] = item_json["updated_at"]
+        self.final_json["score"] = item_json["douban_rate"]
+        self.final_json["actors"] = item_json["actors"]
+        self.final_json["directors"] = item_json["directors"]
+        self.final_json["areas"] = item_json["region"]
+        self.final_json["tags"] = item_json["type"]
+        self.final_json["langs"] = item_json["language"]
+        self.final_json["time_length"] = item_json["item_length"]
+        self.final_json["total"] = item_json["total"]
+        self.final_json["current"] = item_json["current"]
+        self.final_json["source"] = ResourceSource._80s
+        self.final_json["summery"] = item_json["movie_content"]
+        self.final_json["url_image_list"] = [item_json["screenshot_link"]]
+        self.final_json["url_bt_download"] = []
+        self.final_json["url_bd_download"] = []
+        self.final_json["url_hd_download"] = []
+        self.final_json["url_pt_download"] = []
+        self.final_json["create_time"] = datetime.now()
+
+    def construct_final_download_json(self, item_json, mark):
+        final_json_key = "url" + "_" + mark + "_download"
+        self.final_json[final_json_key] = []
+        for j, k in enumerate(item_json[mark]['format_title']):
+            download_item = {}
+            download_item["title"] = k
+            download_item["size"] = item_json[mark]['format_size'][j]
+            download_item["url"] = item_json[mark]['download_link'][j]
+            self.final_json[final_json_key].append(download_item)
+
+    def write_to_mongodb(self, final_json):
+        print('final_json----------')
+        print(final_json)
+        exist_record = ResourceRecord.objects(
+            url_source=final_json["url_source"]).first()
+        if not exist_record:
+            resource_record = ResourceRecord(**final_json)
+            resource_record.save()
+        else:
+            print('已存在==========')
+
+    def update_download_info_to_mongodb(self, final_json, mark):
+        resource_record = ResourceRecord.objects(
+            url_source=final_json["url_source"]).first()
+        download_item_key = "url" + "_" + mark + "_download"
+        resource_record[download_item_key] = final_json[mark]
+        resource_record.save()
+        print('final_json----------')
+        print(final_json)

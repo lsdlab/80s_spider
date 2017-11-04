@@ -13,10 +13,10 @@ from datetime import datetime
 
 START_PAGE = 'http://www.80s.tw/dm/list/----14--p'
 PAGE_NUM = 1
-# PAGE_TOTAL = 1
 PAGE_TOTAL = 61
-WRITE_JSON = False
+WRITE_JSON = True
 WRITE_MONGODB = True
+
 
 class Handler(BaseHandler):
     crawl_config = {}
@@ -41,34 +41,11 @@ class Handler(BaseHandler):
         for each in response.doc('.h3 > a').items():
             if each.attr.href.split('/')[-2:-1] == ['dm']:
                 print(each.attr.href)
-                self.crawl(each.attr.href, callback=self.detail_page, fetch_type='js')
+                self.crawl(
+                    each.attr.href, callback=self.detail_page, fetch_type='js')
 
     @config(priority=2)
     def detail_page(self, response):
-        #print(title)
-        #print(year)
-        #print(latest_update)
-        #print(update_period)
-        ##print(special_list)
-        #print(special_list_link)
-        #print(other_names)
-        #print(actors)
-        #print(actors_link)
-        # print(header_img_link)
-        # print(screenshot_link)
-
-        # print(type)
-        # print(type_link)
-        # print(region)
-        # print(directors)
-        # print(directors_link)
-        # print(created_at)
-        # print(updated_at)
-        # print(item_length)
-        # print(douban_rate)
-        # print(douban_comment_link)
-        # print(movie_content)
-
         self.item_json["url"] = response.url
         self.item_json["title"] = response.doc('title').text()
 
@@ -77,15 +54,17 @@ class Handler(BaseHandler):
         self.construct_detail_json(self.format_detail_info(response))
 
         if WRITE_JSON:
-            pass
+            # 先不写，到取得第一部分下载信息的时候一起写进去
             # self.write_brief_info_to_json(self.item_json)
+            pass
         if WRITE_MONGODB:
             self.construct_final_json(self.item_json, response)
 
         # 第一个 tab bt 直接能解析，其他的 tab 需要爬单独的 html 再解析
         # http://www.80s.tw/movie/1173/bt-1 bd-1 hd-1
-        mark_re = re.search(r"电视|平板|手机", response.doc('.dlselected > span').text())
-        mark = 'other'
+        mark_re = re.search(r"电视|平板|手机",
+                            response.doc('.dlselected > span').text())
+        mark = ''
         self.final_json["url_has_downlaod"] = []
         if mark_re:
             if mark_re.group(0) == '电视':
@@ -96,50 +75,53 @@ class Handler(BaseHandler):
                 mark = 'hd'
         self.final_json["url_has_downlaod"].append(mark)
 
-        self.construct_download_json(self.get_download_info(response), mark=mark)
+        # 构建第一个下载页面的 JSON 信息
+        self.construct_download_json(
+            self.get_download_info(response), mark=mark)
 
         if WRITE_JSON:
-            self.write_info_to_json(self.item_json, response, mark)
+            self.write_info_to_json(self.item_json, response)
         if WRITE_MONGODB:
             self.construct_final_download_json(self.item_json, mark)
             self.write_to_mongodb(self.final_json)
 
-        # 三种大小
-        # self.crawl(response.url + "/bt-1", callback=self.get_bt_info)
+        # 另外两种大小，可有可无
         self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
         self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
 
-    # @config(priority=2)
-    # def get_bt_info(self, response):
-    #     if response.status_code == 200:
-    #         self.construct_download_json(self.get_download_info(response), mark='bt')
-    #         self.write_download_info_to_json(self.item_json, response)
-
+    # 爬取 bd
     @config(priority=2)
     def get_bd_info(self, response):
         if response.status_code == 200:
-            self.construct_download_json(self.get_download_info(response), mark='bd')
+            self.construct_download_json(
+                self.get_download_info(response), mark='bd')
             if WRITE_JSON:
                 self.write_download_info_to_json(self.item_json, response)
             if WRITE_MONGODB:
-                self.final_json = self.construct_final_download_json(self.item_json, mark)
+                self.final_json = self.construct_final_download_json(
+                    self.item_json, mark)
                 self.update_download_info_to_mongodb(self.final_json, mark)
 
+    # 爬取 hd
     @config(priority=2)
     def get_hd_info(self, response):
         if response.status_code == 200:
-            self.construct_download_json(self.get_download_info(response), mark='hd')
+            self.construct_download_json(
+                self.get_download_info(response), mark='hd')
             if WRITE_JSON:
                 self.write_download_info_to_json(self.item_json, response)
             if WRITE_MONGODB:
-                self.final_json = self.construct_final_download_json(self.item_json, mark)
+                self.final_json = self.construct_final_download_json(
+                    self.item_json, mark)
                 self.update_download_info_to_mongodb(self.final_json, mark)
 
     def get_download_info(self, res):
         # 电影原始名称 电视 赛车总动员 4.2 G 需要处理
         row_title = [i.text() for i in res.doc('.nm > span').items()]
         # 格式化后的名称列表
-        format_title = [i.split(' ')[1]+ '-' +i.split(' ')[3] for i in row_title]
+        format_title = [
+            i.split(' ')[1] + '-' + i.split(' ')[3] for i in row_title
+        ]
 
         # 格式化后的文件大小列表
         format_size = []
@@ -150,7 +132,6 @@ class Handler(BaseHandler):
             else:
                 size = ''
             format_size.append(size)
-        #format_size = [i.split(' ')[2] for i in row_title]
 
         # 下载链接列表
         download_link = [
@@ -216,7 +197,6 @@ class Handler(BaseHandler):
                     actors_link = info_span_link[1:]
                 else:
                     actors_link = info_span_link[:]
-
         return title, year, latest_update, update_period, special_list, special_list_link, other_names, actors, actors_link, header_img_link, screenshot_link
 
     def format_detail_info(self, res):
@@ -238,7 +218,8 @@ class Handler(BaseHandler):
             elif re.search(r"导演", i):
                 # 导演可有可无
                 directors = '|'.join(i.split('： ')[1].split(' '))
-                directors_link = span_block_link[len(type_list):len(type_list) + 1]
+                directors_link = span_block_link[len(type_list):len(type_list)
+                                                 + 1]
             elif re.search(r"地区", i):
                 if len(i) > 10:
                     region = re.sub('[\s+]', ' ', i)
@@ -294,35 +275,33 @@ class Handler(BaseHandler):
 
     def construct_download_json(self, *args, **kwargs):
         mark = kwargs['mark']
-        # self.item_json = {}
         self.item_json[mark] = {}
         self.item_json[mark]["row_title"] = args[0][0]
         self.item_json[mark]["format_title"] = args[0][1]
         self.item_json[mark]["format_size"] = args[0][2]
         self.item_json[mark]["download_link"] = args[0][3]
 
-    def write_brief_info_to_json(self, data):
-        file_name = data['url'].split('/')[-2] + '_' + data['url'].split('/')[
-            -1] + '.json'
-        # print('==========')
-        # print(file_name)
-        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name,
-                  'w') as f:
-            json.dump(data, f)
+    # def write_brief_info_to_json(self, data):
+    #     file_name = data['url'].split('/')[-2] + '_' + data['url'].split('/')[
+    #         -1] + '.json'
+    #     # print('==========')
+    #     # print(file_name)
+    #     with open("/Users/Chen/Desktop/80s_spider/json/" + file_name,
+    #               'w') as f:
+    #         json.dump(data, f)
 
-    def write_info_to_json(self, data, res, mark):
+    def write_info_to_json(self, data, res):
         # print('data')
         # print(data)
         # print('res')
         # print(res)
-        # print('mark')
-        # print(mark)
         file_name = res.url.split('/')[-2] + '_' + res.url.split('/')[
             -1] + '.json'
         print('==========')
         print(file_name)
 
-        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name, 'w') as f:
+        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name,
+                  'w') as f:
             json.dump(data, f)
 
     def write_download_info_to_json(self, data, res):
@@ -334,7 +313,8 @@ class Handler(BaseHandler):
             -2] + '.json'
         print('==========')
         print(file_name)
-        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name, 'r') as f:
+        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name,
+                  'r') as f:
             basic_info = json.load(f)
             print('basic_info')
             print(basic_info)
@@ -347,7 +327,8 @@ class Handler(BaseHandler):
                 mark = 'hd'
             basic_info[mark] = data
 
-        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name, 'w') as f:
+        with open("/Users/Chen/Desktop/80s_spider/json/" + file_name,
+                  'w') as f:
             json.dump(basic_info, f)
 
     def construct_final_json(self, item_json, res):
@@ -376,14 +357,12 @@ class Handler(BaseHandler):
         self.final_json["current"] = item_json["current"]
         self.final_json["source"] = ResourceSource._80s
         self.final_json["summery"] = item_json["movie_content"]
-
         self.final_json["url_image_list"] = [item_json["screenshot_link"]]
         self.final_json["url_bt_download"] = []
         self.final_json["url_bd_download"] = []
         self.final_json["url_hd_download"] = []
         self.final_json["url_pt_download"] = []
         self.final_json["create_time"] = datetime.now()
-
 
     def construct_final_download_json(self, item_json, mark):
         final_json_key = "url" + "_" + mark + "_download"
@@ -398,11 +377,17 @@ class Handler(BaseHandler):
     def write_to_mongodb(self, final_json):
         print('final_json----------')
         print(final_json)
-        resource_record = ResourceRecord(**final_json)
-        resource_record.save()
+        exist_record = ResourceRecord.objects(
+            url_source=final_json["url_source"]).first()
+        if not exist_record:
+            resource_record = ResourceRecord(**final_json)
+            resource_record.save()
+        else:
+            print('已存在==========')
 
     def update_download_info_to_mongodb(self, final_json, mark):
-        resource_record = ResourceRecord.objects(url_source=final_json["url_source"]).first()
+        resource_record = ResourceRecord.objects(
+            url_source=final_json["url_source"]).first()
         download_item_key = "url" + "_" + mark + "_download"
         resource_record[download_item_key] = final_json[mark]
         resource_record.save()

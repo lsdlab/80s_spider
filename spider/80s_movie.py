@@ -9,6 +9,7 @@ import hashlib
 from pyspider.libs.base_handler import *
 from model.resource.resource import ResourceRecord
 from model.resource.resource import ResourceSource
+from model.resource.resource import ResourceDownloadItem
 from datetime import datetime
 
 START_PAGE = 'http://www.80s.tw/movie/list/-----p'
@@ -17,9 +18,20 @@ PAGE_TOTAL = 408
 WRITE_JSON = True
 WRITE_MONGODB = True
 
+global_headers = {
+    'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.75 Safari/537.36',
+    'Host':
+    'www.80s.tw',
+    'Referer':
+    'http://www.80s.tw'
+}
+
 
 class Handler(BaseHandler):
-    crawl_config = {}
+    crawl_config = {
+        'headers': global_headers
+    }
 
     def __init__(self):
         self.start_page = START_PAGE
@@ -27,23 +39,35 @@ class Handler(BaseHandler):
         self.page_total = PAGE_TOTAL
         self.item_json = {}
         self.final_json = {}
+        self.referer_url = ''
 
+    # 每三天重爬
     @every(minutes=24 * 60 * 3)
     def on_start(self):
         while self.page_num <= self.page_total:
             crawl_url = self.start_page + str(self.page_num)
+            self.referer_url = crawl_url
             print(crawl_url)
-            self.crawl(crawl_url, callback=self.index_page)
+            self.crawl(
+                crawl_url,
+                callback=self.index_page,
+                headers=global_headers)
             self.page_num += 1
 
-    @config(age=10 * 24 * 60 * 60, priority=3)
+    # age 一天内认为页面没有改变，不会再重新爬取，每天自动重爬
+    # 列表页
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=3)
     def index_page(self, response):
         for each in response.doc('.h3 > a').items():
             print(each.attr.href)
+            custom_headers = global_headers
+            custom_headers['Referer'] = self.referer_url
             self.crawl(
-                each.attr.href, callback=self.detail_page, fetch_type='js')
+                each.attr.href, callback=self.detail_page, fetch_type='js', headers=custom_headers)
 
-    @config(priority=2)
+    # age 一天内认为页面没有改变，不会再重新爬取
+    # 详情页
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=2)
     def detail_page(self, response):
         # 构建两块信息
         self.construct_brief_json(self.format_brief_info(response))
@@ -80,7 +104,7 @@ class Handler(BaseHandler):
             self.write_info_to_json(self.item_json, response)
         if WRITE_MONGODB:
             self.construct_final_download_json(self.item_json, mark)
-            self.write_to_mongodb(self.final_json)
+            self.write_to_mongodb(self.final_json, mark)
 
         # 另外两种大小，可有可无
         # self.crawl(response.url + "/bt-1", callback=self.get_bt_info)
@@ -93,9 +117,9 @@ class Handler(BaseHandler):
         }
 
     # 爬取 bt
-    @config(priority=1)
-    def get_bt_info(self, response):
-        self.crawl_download_info(response, 'bt')
+    # @config(priority=1)
+    # def get_bt_info(self, response):
+    #     self.crawl_download_info(response, 'bt')
 
     # 爬取 bd
     @config(priority=1)
@@ -107,16 +131,23 @@ class Handler(BaseHandler):
     def get_hd_info(self, response):
         self.crawl_download_info(response, 'hd')
 
-    def crawl_download_info(response, mark):
+    def crawl_download_info(self, response, mark):
         if response.status_code == 200:
             self.construct_download_json(
-                self.get_download_info(response), mark)
+                self.get_download_info(response), mark=mark)
             if WRITE_JSON:
                 self.write_download_info_to_json(self.item_json, response)
             if WRITE_MONGODB:
+                print('=================--------------')
+                print(self.item_json)
                 self.final_json = self.construct_final_download_json(
                     self.item_json, mark)
-                self.update_download_info_to_mongodb(self.final_json, mark)
+                print('=================--------------')
+                print(self.final_json)
+                url_source = response.url
+                print('url_source   ' + url_source)
+                self.update_download_info_to_mongodb(self.final_json, mark, url_source)
+
 
     def get_download_info(self, res):
         # 电影原始名称 电视 赛车总动员 4.2 G 需要处理
@@ -296,8 +327,7 @@ class Handler(BaseHandler):
         print(res)
         file_name = res.url.split('/')[-2] + '_' + res.url.split('/')[
             -1] + '.json'
-        print('==========')
-        print(file_name)
+        print('file_name ========== ' + file_name)
         with open("/Users/Chen/Desktop/80s_spider/json/" + file_name,
                   'w') as f:
             json.dump(data, f)
@@ -309,8 +339,7 @@ class Handler(BaseHandler):
         print(res)
         file_name = res.url.split('/')[-3] + '_' + res.url.split('/')[
             -2] + '.json'
-        print('==========')
-        print(file_name)
+        print('file_name ========== ' + file_name)
         with open("/Users/Chen/Desktop/80s_spider/json/" + file_name,
                   'r') as f:
             basic_info = json.load(f)
@@ -323,7 +352,7 @@ class Handler(BaseHandler):
                 mark = 'bd'
             elif res.url.split('/')[-1] == 'hd-1':
                 mark = 'hd'
-            basic_info['download_info'][mark] = data
+            basic_info[mark] = data
 
         with open("/Users/Chen/Desktop/80s_spider/json/" + file_name,
                   'w') as f:
@@ -371,23 +400,75 @@ class Handler(BaseHandler):
             download_item["size"] = item_json[mark]['format_size'][j]
             download_item["url"] = item_json[mark]['download_link'][j]
             self.final_json[final_json_key].append(download_item)
+        return self.final_json
 
-    def write_to_mongodb(self, final_json):
-        print('final_json----------')
+    def write_to_mongodb(self, final_json, mark):
+        print('========== final_json 只带有第一个下载信息 ==========')
         print(final_json)
         exist_record = ResourceRecord.objects(
             url_source=final_json["url_source"]).first()
+        # 不存在，写入新的，存在就更新
         if not exist_record:
-            resource_record = ResourceRecord(**final_json)
-            resource_record.save()
+            new_resource_record = ResourceRecord(**final_json)
+            new_resource_record.save()
+            print('========== 存储至 MongoDB ' + final_json['url_source'] + '==========')
         else:
-            print('已存在==========')
+            # exist_record['sub_title'] = final_json['sub_title']
+            # exist_record['last_update_desc'] = final_json['last_update_desc']
 
-    def update_download_info_to_mongodb(self, final_json, mark):
-        resource_record = ResourceRecord.objects(
-            url_source=final_json["url_source"]).first()
-        download_item_key = "url" + "_" + mark + "_download"
-        resource_record[download_item_key] = final_json[mark]
-        resource_record.save()
-        print('final_json----------')
+            download_item_key = "url" + "_" + mark + "_download"
+            for i in final_json[download_item_key]:
+                if len(exist_record[download_item_key]) != 0:
+                    for j in exist_record[download_item_key]:
+                        if i['url'] != j['url']:
+                            source = ResourceDownloadItem(title=i['title'], url=i['url'], size=i['size'])
+                            exist_record[download_item_key].append(source)
+                            exist_record.save()
+                            print('========== final_json 带有全部下载信息 bd hd（如果有的话） ==========')
+                            print(final_json)
+                        else:
+                            print('========== 这一集已经存在 ==========')
+                else:
+                    for j in exist_record[download_item_key]:
+                        if i['url'] != j['url']:
+                            source = ResourceDownloadItem(title=i['title'], url=i['url'], size=i['size'])
+                            exist_record[download_item_key].append(source)
+                            exist_record.save()
+                            print('========== final_json 带有全部下载信息 bd hd（如果有的话） ==========')
+                            print(final_json)
+                        else:
+                            print('========== 这一集已经存在 ==========')
+
+            exist_record.save()
+            print('========== 资源已存在，更新基本信息和第一页的剧集更新（如果有更新的话） ' + final_json['url_source'] + ' ==========')
+
+    # 更新新的剧集下载信息进去
+    def update_download_info_to_mongodb(self, final_json, mark, url):
+        print('final_json')
         print(final_json)
+        print('mark  ' + mark)
+        url = url[:-5]
+        print('url  ' + url)
+        resource_record = ResourceRecord.objects(
+            url_source=url).first()
+        if resource_record:
+            resource_record['url_has_downlaod'].append(mark)
+            resource_record.save()
+            download_item_key = "url" + "_" + mark + "_download"
+            for i in final_json[download_item_key]:
+                if len(resource_record[download_item_key]) != 0:
+                    for j in resource_record[download_item_key]:
+                        if i['url'] != j['url']:
+                            source = ResourceDownloadItem(title=i['title'], url=i['url'], size=i['size'])
+                            resource_record[download_item_key].append(source)
+                            resource_record.save()
+                            print('========== final_json 带有全部下载信息 bd hd（如果有的话） ==========')
+                            print(final_json)
+                        else:
+                            print('========== 这一集已经存在 ==========')
+                else:
+                    source = ResourceDownloadItem(title=i['title'], url=i['url'], size=i['size'])
+                    resource_record[download_item_key].append(source)
+                    resource_record.save()
+                    print('========== final_json 带有全部下载信息 bd hd（如果有的话） ==========')
+                    print(final_json)

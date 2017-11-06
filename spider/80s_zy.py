@@ -14,7 +14,7 @@ from datetime import datetime
 START_PAGE = 'http://www.80s.tw/zy/list/----4--p'
 PAGE_NUM = 1
 PAGE_TOTAL = 17
-WRITE_JSON = True
+WRITE_JSON = False
 WRITE_MONGODB = True
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 # Created on 2017-11-03 10:56:36
-# Project: 80s_movie_final
+# Project: 80s_movie
 
 import re
 import json

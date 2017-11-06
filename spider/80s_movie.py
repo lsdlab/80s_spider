@@ -28,7 +28,7 @@ GLOBAL_HEADERS = {
 
 
 class Handler(BaseHandler):
-    crawl_config = {'headers': GLOBAL_HEADERS}
+    crawl_config = {}
 
     def __init__(self):
         self.start_page = START_PAGE
@@ -46,7 +46,7 @@ class Handler(BaseHandler):
             self.referer_url = crawl_url
             print(crawl_url)
             self.crawl(
-                crawl_url, callback=self.index_page, headers=GLOBAL_HEADERS)
+                crawl_url, callback=self.index_page)
             self.page_num += 1
 
     # age 一天内认为页面没有改变，不会再重新爬取，每天自动重爬
@@ -60,8 +60,7 @@ class Handler(BaseHandler):
             self.crawl(
                 each.attr.href,
                 callback=self.detail_page,
-                fetch_type='js',
-                headers=custom_headers)
+                fetch_type='js')
 
     # age 一天内认为页面没有改变，不会再重新爬取
     # 详情页
@@ -429,19 +428,22 @@ class Handler(BaseHandler):
         # exist_record['sub_title'] = final_json['sub_title']
         # exist_record['last_update_desc'] = final_json['last_update_desc']
         download_item_key = "url" + "_" + mark + "_download"
+        episode_length = exist_record[download_item_key].count()
+        print('episode_length 现有剧集数')
+        print(episode_length)
         for i in final_json[download_item_key]:
-            if exist_record[download_item_key].count() != 0:
-                for j in exist_record[download_item_key]:
-                    if i['url'] != j['url']:
-                        source = ResourceDownloadItem(
-                            title=i['title'], url=i['url'], size=i['size'])
-                        exist_record[download_item_key].append(source)
-                        exist_record.save()
-                        print('========== ' + i['title'] + ' ========== ' +
-                              '新剧集')
-                    else:
-                        print('========== ' + i['title'] + ' ========== ' +
+            if episode_length != 0:
+                exist_episode = exist_record[download_item_key].get(title=i['title'])
+                if exist_episode:
+                    print('========== ' + i['title'] + ' ========== ' +
                               '这一集已存在')
+                else:
+                    source = ResourceDownloadItem(
+                        title=i['title'], url=i['url'], size=i['size'])
+                    exist_record[download_item_key].append(source)
+                    exist_record.save()
+                    print('========== ' + i['title'] + ' ========== ' +
+                          '新剧集')
             else:
                 source = ResourceDownloadItem(
                     title=i['title'], url=i['url'], size=i['size'])

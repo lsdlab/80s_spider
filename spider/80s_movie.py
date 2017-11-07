@@ -22,9 +22,7 @@ GLOBAL_HEADERS = {
     'User-Agent':
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.75 Safari/537.36',
     'Host':
-    'www.80s.tw',
-    'Referer':
-    'http://www.80s.tw'
+    'www.80s.tw'
 }
 
 
@@ -37,17 +35,15 @@ class Handler(BaseHandler):
         self.page_total = PAGE_TOTAL
         self.item_json = {}
         self.final_json = {}
-        self.referer_url = ''
 
     # 每三天重爬
     @every(minutes=24 * 60 * 3)
     def on_start(self):
         while self.page_num <= self.page_total:
             crawl_url = self.start_page + str(self.page_num)
-            self.referer_url = crawl_url
             print(crawl_url)
             self.crawl(
-                crawl_url, callback=self.index_page)
+                crawl_url, callback=self.index_page, headers=GLOBAL_HEADERS)
             self.page_num += 1
 
     # age 一天内认为页面没有改变，不会再重新爬取，每天自动重爬
@@ -56,12 +52,11 @@ class Handler(BaseHandler):
     def index_page(self, response):
         for each in response.doc('.h3 > a').items():
             print(each.attr.href)
-            custom_headers = GLOBAL_HEADERS
-            custom_headers['Referer'] = self.referer_url
             self.crawl(
                 each.attr.href,
                 callback=self.detail_page,
-                fetch_type='js')
+                fetch_type='js',
+                headers=GLOBAL_HEADERS)
 
     # age 一天内认为页面没有改变，不会再重新爬取
     # 详情页
@@ -95,30 +90,33 @@ class Handler(BaseHandler):
                 mark = 'hd'
         self.final_json["url_has_downlaod"].append(mark)
 
-        # 构建第一个下载页面的 JSON 信息
-        self.construct_download_json(
-            self.get_download_info(response), mark=mark)
+        if mark:
+            # 构建第一个下载页面的 JSON 信息
+            self.construct_download_json(
+                self.get_download_info(response), mark=mark)
 
-        # 两块信息加上第一页的下载信息写入 JSON 和 MONGODB
-        if WRITE_JSON:
-            self.write_info_to_json(self.item_json, response)
-        if WRITE_MONGODB:
-            self.construct_final_download_json(self.item_json, mark)
-            self.write_to_mongodb(self.final_json, mark)
+            # 两块信息加上第一页的下载信息写入 JSON 和 MONGODB
+            if WRITE_JSON:
+                self.write_info_to_json(self.item_json, response)
+            if WRITE_MONGODB:
+                self.construct_final_download_json(self.item_json, mark)
+                self.write_to_mongodb(self.final_json, mark)
 
-        # 另外两种大小，可有可无
-        tab_text = response.doc('.cpage').text()
-        bd_re = re.search(r"平板", tab_text)
-        hd_re = re.search(r"手机", tab_text)
-        if bd_re and mark != 'bd':
-            self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
-        elif hd_re and mark != 'hd':
-            self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
+            # 另外两种大小，可有可无
+            tab_text = response.doc('.cpage').text()
+            bd_re = re.search(r"平板", tab_text)
+            hd_re = re.search(r"手机", tab_text)
+            if bd_re and mark != 'bd':
+                self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
+            elif hd_re and mark != 'hd':
+                self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
 
-        return {
-            "url": response.url,
-            "title": response.doc('.font14w').text(),
-        }
+            return {
+                "url": response.url,
+                "title": response.doc('.font14w').text(),
+            }
+        else:
+            print('========== 处理错误，没有得到下载信息 ==========')
 
     # age 一天内认为页面没有改变，不会再重新爬取
     # 爬取 hd

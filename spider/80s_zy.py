@@ -15,6 +15,7 @@ from datetime import datetime
 START_PAGE = 'http://www.80s.tw/zy/list/----4--p'
 PAGE_NUM = 1
 PAGE_TOTAL = 17
+# PAGE_TOTAL = 5
 WRITE_JSON = False
 WRITE_MONGODB = True
 GLOBAL_HEADERS = {
@@ -106,8 +107,18 @@ class Handler(BaseHandler):
             self.write_to_mongodb(self.final_json, mark)
 
         # 另外两种大小，可有可无
-        self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
-        self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
+        tab_text = response.doc('.cpage').text()
+        bd_re = re.search(r"平板", tab_text)
+        hd_re = re.search(r"手机", tab_text)
+        if bd_re and mark != 'bd':
+            self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
+        elif hd_re and mark != 'hd':
+            self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
+
+        return {
+            "url": response.url,
+            "title": response.doc('.font14w').text(),
+        }
 
     # age 一天内认为页面没有改变，不会再重新爬取
     # 爬取 hd
@@ -161,15 +172,16 @@ class Handler(BaseHandler):
         info = res.doc('.info').text()
         # 年份
         year_re = re.search(r"\d{4}", info)
-        year = year_re.group(0)
+        if year_re:
+            year = year_re.group(0)
         # 名称
         title = res.doc('.font14w').text()
         # 题图
-        header_img_link = res.doc('.img > img').attr.src
+        header_img_link = res.doc('.img > img').attr.src or ''
         print('header_img')
         print(header_img_link)
         # 截图
-        screenshot_link = res.doc('.noborder > img').attr.src
+        screenshot_link = res.doc('.noborder > img').attr.src or ''
         print('screenshot_link')
         print(screenshot_link)
 
@@ -356,7 +368,10 @@ class Handler(BaseHandler):
         self.final_json["current"] = item_json["current"]
         self.final_json["source"] = ResourceSource._80s
         self.final_json["summery"] = item_json["movie_content"]
-        self.final_json["url_image_list"] = [item_json["screenshot_link"]]
+        if item_json["screenshot_link"] == '':
+            self.final_json["url_image_list"] = []
+        else:
+            self.final_json["url_image_list"] = [item_json["screenshot_link"]]
         self.final_json["url_bt_download"] = []
         self.final_json["url_bd_download"] = []
         self.final_json["url_hd_download"] = []
@@ -372,6 +387,7 @@ class Handler(BaseHandler):
             download_item["size"] = item_json[mark]['format_size'][j]
             download_item["url"] = item_json[mark]['download_link'][j]
             self.final_json[final_json_key].append(download_item)
+        return self.final_json
 
     def write_to_mongodb(self, final_json, mark):
         print('========== final_json 只带有第一个下载信息 ==========')
@@ -406,8 +422,8 @@ class Handler(BaseHandler):
 
     def update_detail_download_info_to_mongodb(self, exist_record, mark,
                                                final_json):
-        exist_record['sub_title'] = final_json['sub_title']
-        exist_record['last_update_desc'] = final_json['last_update_desc']
+        # exist_record['sub_title'] = final_json['sub_title']
+        # exist_record['last_update_desc'] = final_json['last_update_desc']
         download_item_key = "url" + "_" + mark + "_download"
         episode_length = exist_record[download_item_key].count()
         print('episode_length 现有剧集数')

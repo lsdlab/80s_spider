@@ -15,6 +15,7 @@ from datetime import datetime
 START_PAGE = 'http://www.80s.tw/dm/list/----14--p'
 PAGE_NUM = 1
 PAGE_TOTAL = 61
+# PAGE_TOTAL = 5
 WRITE_JSON = False
 WRITE_MONGODB = True
 GLOBAL_HEADERS = {
@@ -106,8 +107,18 @@ class Handler(BaseHandler):
             self.write_to_mongodb(self.final_json, mark)
 
         # 另外两种大小，可有可无
-        self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
-        self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
+        tab_text = response.doc('.cpage').text()
+        bd_re = re.search(r"平板", tab_text)
+        hd_re = re.search(r"手机", tab_text)
+        if bd_re and mark != 'bd':
+            self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
+        elif hd_re and mark != 'hd':
+            self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
+
+        return {
+            "url": response.url,
+            "title": response.doc('.font14w').text(),
+        }
 
     # age 一天内认为页面没有改变，不会再重新爬取
     # 爬取 hd
@@ -173,7 +184,8 @@ class Handler(BaseHandler):
         info = res.doc('.info').text()
         # 年份
         year_re = re.search(r"\d{4}", info)
-        year = year_re.group(0)
+        if year_re:
+            year = year_re.group(0)
         # 名称
         title = res.doc('.font14w').text()
         # 题图
@@ -272,12 +284,24 @@ class Handler(BaseHandler):
         self.item_json["screenshot_link"] = args[0][10]
 
         total_current_re = re.search(r"/", args[0][2])
+        current_re = re.search(r"第(\d+)集", args[0][2])
+        total_re = re.search(r"共(\d+)集", args[0][2])
         if total_current_re:
-            self.item_json["current"] = args[0][2].split('/')[0][1:-1]
-            self.item_json["total"] = args[0][2].split('/')[1][1:-1]
-        else:
-            self.item_json["current"] = args[0][2].split('/')[0][1:-1]
+            current_re = re.search(r"第(\d+)集", args[0][2].split('/')[0])
+            total_re = re.search(r"共(\d+)集", args[0][2].split('/')[1])
+            if current_re:
+                self.item_json["current"] = current_re.group(0)[1:-1]
+            if total_re:
+                self.item_json["total"] = total_re.group(0)[1:-1]
+        elif current_re:
+            if current_re:
+                self.item_json["current"] = current_re.group(0)[1:-1]
             self.item_json["total"] = 0
+        elif total_re:
+            if total_re:
+                self.item_json["current"] = 0
+            self.item_json["total"] = total_re.group(0)[1:-1]
+
 
     def construct_detail_json(self, *args):
         self.item_json["type"] = args[0][0]
@@ -392,6 +416,7 @@ class Handler(BaseHandler):
             download_item["size"] = item_json[mark]['format_size'][j]
             download_item["url"] = item_json[mark]['download_link'][j]
             self.final_json[final_json_key].append(download_item)
+        return self.final_json
 
     def write_to_mongodb(self, final_json, mark):
         print('========== final_json 只带有第一个下载信息 ==========')
@@ -419,6 +444,7 @@ class Handler(BaseHandler):
         print('url  ' + url)
         exist_record = ResourceRecord.objects(url_source=url).first()
         if exist_record:
+            # TODO
             exist_record['url_has_downlaod'].append(mark)
             exist_record.save()
             self.update_detail_download_info_to_mongodb(exist_record, mark,
@@ -426,8 +452,8 @@ class Handler(BaseHandler):
 
     def update_detail_download_info_to_mongodb(self, exist_record, mark,
                                                final_json):
-        exist_record['sub_title'] = final_json['sub_title']
-        exist_record['last_update_desc'] = final_json['last_update_desc']
+        # exist_record['sub_title'] = final_json['sub_title']
+        # exist_record['last_update_desc'] = final_json['last_update_desc']
         download_item_key = "url" + "_" + mark + "_download"
         episode_length = exist_record[download_item_key].count()
         print('episode_length 现有剧集数')

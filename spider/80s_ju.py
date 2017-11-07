@@ -15,6 +15,7 @@ from datetime import datetime
 START_PAGE = 'http://www.80s.tw/ju/list/----0--p'
 PAGE_NUM = 1
 PAGE_TOTAL = 130
+# PAGE_TOTAL = 5
 WRITE_JSON = False
 WRITE_MONGODB = True
 GLOBAL_HEADERS = {
@@ -105,8 +106,18 @@ class Handler(BaseHandler):
             self.write_to_mongodb(self.final_json, mark)
 
         # 另外两种大小，可有可无
-        self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
-        self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
+        tab_text = response.doc('.cpage').text()
+        bd_re = re.search(r"平板", tab_text)
+        hd_re = re.search(r"手机", tab_text)
+        if bd_re and mark != 'bd':
+            self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
+        elif hd_re and mark != 'hd':
+            self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
+
+        return {
+            "url": response.url,
+            "title": response.doc('.font14w').text(),
+        }
 
     # age 一天内认为页面没有改变，不会再重新爬取
     # 爬取 bd
@@ -161,8 +172,9 @@ class Handler(BaseHandler):
         title, year, latest_update, update_period, special_list, special_list_link, other_names, actors, actors_link, header_img_link, screenshot_link = '', '', '', '', '', '', '', '', '', '', ''
         info = res.doc('.info').text()
         # 年份
-        year_re = re.search(r"\d{4}", info)
-        year = year_re.group(0)
+        year_re = re.search(r"(\d{4})", info)
+        if year_re:
+            year = year_re.group(0)
         # 名称
         title = res.doc('.font14w').text()
         # 题图
@@ -193,14 +205,14 @@ class Handler(BaseHandler):
             elif re.search(r"又名", i):
                 # 又名可有可无
                 other_names = i.split('：')[1].strip()
-                other_names = '/'.join(other_names.split(' , '))
+                other_names = '|'.join(other_names.split(' , '))
             elif re.search(r"专题", i):
                 # 专题也是可有可无
                 special_list = i.split('：')[1].strip()
                 special_list_link = info_span_link[:1]
             elif re.search(r"演员", i):
                 actors = i.split('：')[1].strip()
-                actors = '/'.join(actors.split(' '))
+                actors = '|'.join(actors.split(' '))
                 if special_list:
                     actors_link = info_span_link[1:]
                 else:
@@ -221,7 +233,7 @@ class Handler(BaseHandler):
         for i in span_block:
             if re.search(r"类型", i):
                 type_list = i.split('： ')[1].split(' ')
-                type = '/'.join(type_list)
+                type = '|'.join(type_list)
                 type_link = span_block_link[:len(type_list)]
             elif re.search(r"导演", i):
                 # 导演可有可无
@@ -229,7 +241,7 @@ class Handler(BaseHandler):
                 directors_link = span_block_link[len(type_list):len(type_list)
                                                  + 1]
             elif re.search(r"地区", i):
-                region = '/'.join(i.split('： ')[1].split(' '))
+                region = '|'.join(i.split('： ')[1].split(' '))
             elif re.search(r"上映日期", i):
                 created_at = i.split('： ')[1]
             elif re.search(r"片长", i):
@@ -256,12 +268,23 @@ class Handler(BaseHandler):
         self.item_json["screenshot_link"] = args[0][10]
 
         total_current_re = re.search(r"/", args[0][2])
+        current_re = re.search(r"第(\d+)集", args[0][2])
+        total_re = re.search(r"共(\d+)集", args[0][2])
         if total_current_re:
-            self.item_json["current"] = args[0][2].split('/')[0][1:-1]
-            self.item_json["total"] = args[0][2].split('/')[1][1:-1]
-        else:
-            self.item_json["current"] = args[0][2].split('/')[0][1:-1]
+            current_re = re.search(r"第(\d+)集", args[0][2].split('/')[0])
+            total_re = re.search(r"共(\d+)集", args[0][2].split('/')[1])
+            if current_re:
+                self.item_json["current"] = current_re.group(0)[1:-1]
+            if total_re:
+                self.item_json["total"] = total_re.group(0)[1:-1]
+        elif current_re:
+            if current_re:
+                self.item_json["current"] = current_re.group(0)[1:-1]
             self.item_json["total"] = 0
+        elif total_re:
+            if total_re:
+                self.item_json["current"] = 0
+            self.item_json["total"] = total_re.group(0)[1:-1]
 
     def construct_detail_json(self, *args):
         self.item_json["type"] = args[0][0]
@@ -375,6 +398,7 @@ class Handler(BaseHandler):
             download_item["size"] = item_json[mark]['format_size'][j]
             download_item["url"] = item_json[mark]['download_link'][j]
             self.final_json[final_json_key].append(download_item)
+        return self.final_json
 
     def write_to_mongodb(self, final_json, mark):
         print('========== final_json 只带有第一个下载信息 ==========')
@@ -409,8 +433,6 @@ class Handler(BaseHandler):
 
     def update_detail_download_info_to_mongodb(self, exist_record, mark,
                                                final_json):
-        exist_record['sub_title'] = final_json['sub_title']
-        exist_record['last_update_desc'] = final_json['last_update_desc']
         download_item_key = "url" + "_" + mark + "_download"
         episode_length = exist_record[download_item_key].count()
         print('episode_length 现有剧集数')

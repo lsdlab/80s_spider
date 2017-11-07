@@ -15,6 +15,7 @@ from datetime import datetime
 START_PAGE = 'http://www.80s.tw/movie/list/-----p'
 PAGE_NUM = 1
 PAGE_TOTAL = 408
+# PAGE_TOTAL = 5
 WRITE_JSON = False
 WRITE_MONGODB = True
 GLOBAL_HEADERS = {
@@ -106,12 +107,17 @@ class Handler(BaseHandler):
             self.write_to_mongodb(self.final_json, mark)
 
         # 另外两种大小，可有可无
-        self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
-        self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
+        tab_text = response.doc('.cpage').text()
+        bd_re = re.search(r"平板", tab_text)
+        hd_re = re.search(r"手机", tab_text)
+        if bd_re and mark != 'bd':
+            self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
+        elif hd_re and mark != 'hd':
+            self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
 
         return {
             "url": response.url,
-            "title": response.doc('title').text(),
+            "title": response.doc('.font14w').text(),
         }
 
     # age 一天内认为页面没有改变，不会再重新爬取
@@ -141,7 +147,7 @@ class Handler(BaseHandler):
 
     def get_download_info(self, res):
         # 电影原始名称 电视 赛车总动员 4.2 G 需要处理
-        row_title = [i.text() for i in res.doc('.nm > span').items()]
+        row_title = [i.text() for i in res.doc('.backcolor1 > .nm > span').items()]
         # 格式化后的名称列表
         format_title = [i.split(' ')[1] for i in row_title]
 
@@ -158,21 +164,24 @@ class Handler(BaseHandler):
 
         # 下载链接列表
         download_link = [
-            i.children().attr.href for i in res.doc('.dlbutton1').items()
+            i.attr.href or '' for i in res.doc('.backcolor1 > .nm > span').items()
         ]
 
         print(row_title)
         print(format_title)
         print(format_size)
+        print('format_size')
         print(download_link)
 
         return row_title, format_title, format_size, download_link
 
     def format_brief_info(self, res):
+        title, year, latest_update, update_period, special_list, special_list_link, other_names, actors, actors_link, header_img_link, screenshot_link = '', '', '', '', '', '', '', '', '', '', ''
         info = res.doc('.info').text()
         # 年份
         year_re = re.search(r"\d{4}", info)
-        year = year_re.group(0)
+        if year_re:
+            year = year_re.group(0)
         # 名称
         title = res.doc('.font14w').text()
         # 题图
@@ -193,34 +202,30 @@ class Handler(BaseHandler):
 
         print(info_span)
         print(info_span_link)
-
-        site_desc = info_span[0]
         print(len(info_span))
-        if len(info_span) == 2:
-            special_list = ''
-            special_list_link = ''
-            other_names = ''
-            actors = ''
-            actors_link = ''
-            actors = info_span[1].split('：')[1].strip()
-            actors = '/'.join(actors.split(' '))
-            actors_link = info_span_link[1:]
-        elif len(info_span) > 3:
-            special_list = info_span[1].split('：')[1].strip()
-            special_list_link = info_span_link[0]
-            other_names = info_span[2].split('：')[1].strip()
-            other_names = '/'.join(other_names.split(' , '))
-            actors = info_span[3].split('：')[1].strip()
-            actors = '/'.join(actors.split(' '))
-            actors_link = info_span_link[1:]
+
+        # info_span 第一个可能为空，有的电视剧名称前面有个国语粤语标识，这五个信息排版混乱，用正则找
+        if info_span[0] == '':
+            site_desc = info_span[1]
         else:
-            special_list = ''
-            special_list_link = ''
-            other_names = info_span[1].split('：')[1].strip()
-            other_names = '/'.join(other_names.split(' , '))
-            actors = info_span[2].split('：')[1].strip()
-            actors = '/'.join(actors.split(' '))
-            actors_link = info_span_link[1:]
+            site_desc = info_span[0]
+
+        for i in info_span:
+            if re.search(r"又名", i):
+                # 又名可有可无
+                other_names = i.split('：')[1].strip()
+                other_names = '|'.join(other_names.split(' , '))
+            elif re.search(r"专题", i):
+                # 专题也是可有可无
+                special_list = i.split('：')[1].strip()
+                special_list_link = info_span_link[:1]
+            elif re.search(r"演员", i):
+                actors = i.split('：')[1].strip()
+                actors = '|'.join(actors.split(' '))
+                if special_list:
+                    actors_link = info_span_link[1:]
+                else:
+                    actors_link = info_span_link[:]
         return title, year, site_desc, special_list, special_list_link, other_names, actors, actors_link, header_img_link, screenshot_link
 
     def format_detail_info(self, res):
@@ -234,13 +239,13 @@ class Handler(BaseHandler):
         print(span_block_link)
 
         type_list = span_block[0].split('： ')[1].split(' ')
-        type = '/'.join(type_list)
+        type = '|'.join(type_list)
         type_link = span_block_link[:len(type_list)]
 
-        region = '/'.join(span_block[1].split('： ')[1].split(' '))
+        region = '|'.join(span_block[1].split('： ')[1].split(' '))
         region_link = span_block_link[len(type_list):len(type_list) + 1]
 
-        language = '/'.join(span_block[2].split('： ')[1].split(' '))
+        language = '|'.join(span_block[2].split('： ')[1].split(' '))
         language_link = span_block_link[len(type_list) + 1:len(type_list) + 2]
 
         if type == '舞台艺术':
@@ -252,7 +257,7 @@ class Handler(BaseHandler):
             updated_at = span_block[5].split('： ')[1]
             douban_rate = span_block[6].split('： ')[1]
         else:
-            directors = '/'.join(span_block[3].split('： ')[1].split(' '))
+            directors = '|'.join(span_block[3].split('： ')[1].split(' '))
             directors_link = span_block_link[len(type_list) + 2:len(
                 type_list) + 2 + len(span_block[3].split('： ')[1].split(' '))]
             created_at = span_block[4].split('： ')[1]

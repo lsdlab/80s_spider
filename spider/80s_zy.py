@@ -6,18 +6,23 @@
 import re
 import json
 import hashlib
+import uuid
+from datetime import datetime
 from pyspider.libs.base_handler import *
 from model.resource.resource import ResourceRecord
 from model.resource.resource import ResourceSource
 from model.resource.resource import ResourceDownloadItem
-from datetime import datetime
+from lib.tool.mongo_extend import MongoExtend
+from stest.base_test import BaseTest
 
+FIRST_PAGE = 'http://www.80s.tw/zy/list'
 START_PAGE = 'http://www.80s.tw/zy/list/----4--p'
 PAGE_NUM = 1
 PAGE_TOTAL = 17
 # PAGE_TOTAL = 5
 WRITE_JSON = False
 WRITE_MONGODB = True
+UPDATE_TO_PRODUCTION = True
 GLOBAL_HEADERS = {
     'User-Agent':
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.75 Safari/537.36',
@@ -30,6 +35,7 @@ class Handler(BaseHandler):
     crawl_config = {}
 
     def __init__(self):
+        self.first_page = FIRST_PAGE
         self.start_page = START_PAGE
         self.page_num = PAGE_NUM
         self.page_total = PAGE_TOTAL
@@ -39,7 +45,24 @@ class Handler(BaseHandler):
     # 每三天重爬
     @every(minutes=24 * 60 * 3)
     def on_start(self):
-        while self.page_num <= self.page_total:
+        self.crawl(
+            self.first_page,
+            callback=self.get_page_num,
+            headers=GLOBAL_HEADERS)
+
+    # age 一天内认为页面没有改变，不会再重新爬取，每天自动重爬
+    # 获取页数
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=1)
+    def get_page_num(self, response):
+        pager_list = [i.attr.href for i in response.doc('.pager > a').items()]
+        page_total_url = pager_list[-1:][0]
+        page_total_re = re.search(r"p(\d+)", page_total_url)
+        if page_total_re:
+            page_total = page_total_re.group(0)[1:]
+        else:
+            page_total = self.page_total
+        print('总页数 ========== ' + str(page_total))
+        while self.page_num <= int(page_total):
             crawl_url = self.start_page + str(self.page_num)
             print(crawl_url)
             self.crawl(
@@ -48,14 +71,13 @@ class Handler(BaseHandler):
 
     # age 一天内认为页面没有改变，不会再重新爬取，每天自动重爬
     # 列表页
-    @config(age=24 * 60 * 60, auto_recrawl=True, priority=3)
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=1)
     def index_page(self, response):
         for each in response.doc('.h3 > a').items():
             print(each.attr.href)
             self.crawl(
                 each.attr.href,
                 callback=self.detail_page,
-                fetch_type='js',
                 headers=GLOBAL_HEADERS)
 
     # age 一天内认为页面没有改变，不会再重新爬取
@@ -120,13 +142,13 @@ class Handler(BaseHandler):
 
     # age 一天内认为页面没有改变，不会再重新爬取
     # 爬取 hd
-    @config(age=24 * 60 * 60, auto_recrawl=True, priority=1)
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=3)
     def get_bd_info(self, response):
         self.crawl_download_info(response, 'bd')
 
     # age 一天内认为页面没有改变，不会再重新爬取
     # 爬取 hd
-    @config(age=24 * 60 * 60, auto_recrawl=True, priority=1)
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=3)
     def get_hd_info(self, response):
         self.crawl_download_info(response, 'hd')
 
@@ -202,14 +224,14 @@ class Handler(BaseHandler):
             elif re.search(r"又名", i):
                 # 又名可有可无
                 other_names = i.split('：')[1].strip()
-                other_names = '/'.join(other_names.split(' , '))
+                other_names = '|'.join(other_names.split(' , '))
             elif re.search(r"专题", i):
                 # 专题也是可有可无
                 special_list = i.split('：')[1].strip()
                 special_list_link = info_span_link[:1]
             elif re.search(r"演员", i):
                 actors = i.split('：')[1].strip()
-                actors = '/'.join(actors.split(' '))
+                actors = '|'.join(actors.split(' '))
                 if special_list:
                     actors_link = info_span_link[1:]
                 else:
@@ -230,17 +252,17 @@ class Handler(BaseHandler):
         for i in span_block:
             if re.search(r"类型", i):
                 type_list = i.split('： ')[1].split(' ')
-                type = '/'.join(type_list)
+                type = '|'.join(type_list)
                 if span_block_link:
                     type_link = span_block_link[:len(type_list)]
             elif re.search(r"导演", i):
                 # 导演可有可无
-                directors = '/'.join(i.split('： ')[1].split(' '))
+                directors = '|'.join(i.split('： ')[1].split(' '))
                 if span_block_link:
                     directors_link = span_block_link[len(type_list):len(
                         type_list) + 1]
             elif re.search(r"地区", i):
-                region = '/'.join(i.split('： ')[1].split(' '))
+                region = '|'.join(i.split('： ')[1].split(' '))
             elif re.search(r"上映日期", i):
                 created_at = i.split('： ')[1]
             elif re.search(r"片长", i):
@@ -251,7 +273,10 @@ class Handler(BaseHandler):
                 douban_rate = i.split('： ')[1]
         if span_block_link:
             douban_comment_link = span_block_link[-1]
-        movie_content = res.doc('#movie_content').text().split('： ')[1].strip()
+        if len(res.doc('#movie_content').text()) == 5:
+            movie_content = ''
+        else:
+            movie_content = res.doc('#movie_content').text().split('： ')[1].strip()
         return type, type_link, region, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content
 
     def construct_brief_json(self, *args):
@@ -355,7 +380,10 @@ class Handler(BaseHandler):
         self.final_json["url_image"] = item_json["header_img_link"]
         self.final_json["show_release_time"] = item_json["created_at"]
         self.final_json["show_update_time"] = item_json["updated_at"]
-        self.final_json["score"] = item_json["douban_rate"]
+        if item_json["douban_rate"] == '暂无':
+            self.final_json["score"] == '0'
+        else:
+            self.final_json["score"] = item_json["douban_rate"]
         self.final_json["actors"] = item_json["actors"]
         self.final_json["directors"] = item_json["directors"]
         self.final_json["areas"] = item_json["region"]
@@ -367,7 +395,7 @@ class Handler(BaseHandler):
         self.final_json["source"] = ResourceSource._80s
         self.final_json["summery"] = item_json["movie_content"]
         if item_json["screenshot_link"] == '':
-            self.final_json["url_image_list"] = []
+            self.final_json["url_image_list"] = ['']
         else:
             self.final_json["url_image_list"] = [item_json["screenshot_link"]]
         self.final_json["url_bt_download"] = []
@@ -375,6 +403,7 @@ class Handler(BaseHandler):
         self.final_json["url_hd_download"] = []
         self.final_json["url_pt_download"] = []
         self.final_json["create_time"] = datetime.now()
+        self.final_json["update_time"] = self.final_json["create_time"]
 
     def construct_final_download_json(self, item_json, mark):
         final_json_key = "url" + "_" + mark + "_download"
@@ -398,50 +427,84 @@ class Handler(BaseHandler):
             new_resource_record.save()
             print('========== 存储至 MongoDB ' + final_json['url_source'] +
                   '==========')
+            # 存储至线上 MongoDB
+            self.update_to_production(new_resource_record)
         else:
             self.update_detail_download_info_to_mongodb(exist_record, mark,
                                                         final_json)
-            print('========== 资源已存在，更新基本信息和第一页的剧集更新（如果有更新的话） ' + final_json[
-                'url_source'] + ' ==========')
+            exist_record['sub_title'] = final_json['sub_title']
+            exist_record['last_update_desc'] = final_json['last_update_desc']
+            exist_record.save()
+            print('========== 资源已存在，更新基本信息(副标题和最新更新描述)和第一页的剧集更新（如果有更新的话） ' +
+                  final_json['url_source'] + ' ==========')
+            # 更新至线上 MongoDB
+            self.update_to_production(exist_record)
 
     # 更新新的剧集下载信息进去
     def update_download_info_to_mongodb(self, final_json, mark, url):
         print('final_json')
         print(final_json)
         print('mark  ' + mark)
-        url = url[:-5]
+        url_source = url[:-5]
         print('url  ' + url)
-        exist_record = ResourceRecord.objects(url_source=url).first()
+        exist_record = ResourceRecord.objects(url_source=url_source).first()
         if exist_record:
-            exist_record['url_has_downlaod'].append(mark)
+            url_has_downlaod = list(exist_record['url_has_downlaod'])
+            if mark not in url_has_downlaod:
+                exist_record['url_has_downlaod'].append(mark)
+            exist_record['update_time'] = datetime.now()
             exist_record.save()
             self.update_detail_download_info_to_mongodb(exist_record, mark,
                                                         final_json)
+            # 更新至线上 MongoDB
+            self.update_to_production(exist_record)
 
     def update_detail_download_info_to_mongodb(self, exist_record, mark,
                                                final_json):
-        # exist_record['sub_title'] = final_json['sub_title']
-        # exist_record['last_update_desc'] = final_json['last_update_desc']
+        # 这里的 final_json 只有 url_bd_download 一个 key
         download_item_key = "url" + "_" + mark + "_download"
         episode_length = exist_record[download_item_key].count()
         print('episode_length 现有剧集数')
         print(episode_length)
         for i in final_json[download_item_key]:
             if episode_length != 0:
-                exist_episode = exist_record[download_item_key].get(title=i['title'])
+                exist_episode = exist_record[download_item_key].get(
+                    title=i['title'])
                 if exist_episode:
                     print('========== ' + i['title'] + ' ========== ' +
-                              '这一集已存在')
+                          '这一集已存在')
                 else:
                     source = ResourceDownloadItem(
                         title=i['title'], url=i['url'], size=i['size'])
                     exist_record[download_item_key].append(source)
                     exist_record.save()
-                    print('========== ' + i['title'] + ' ========== ' +
-                          '新剧集')
+                    print('========== ' + i['title'] + ' ========== ' + '新剧集')
             else:
                 source = ResourceDownloadItem(
                     title=i['title'], url=i['url'], size=i['size'])
                 exist_record[download_item_key].append(source)
                 exist_record.save()
                 print('========== ' + i['title'] + ' ========== ' + '新剧集')
+
+    def update_to_production(self, resource):
+        print('========== 上传至生产 ==========')
+        if UPDATE_TO_PRODUCTION:
+            resource_json = MongoExtend.mongo_to_json(resource)
+            module = 'resource'
+            params = dict(
+                method='update_resource',
+                resource_json=resource_json,
+                device_token='',
+                source_from_description="pyspider",
+                app_uuid=str(uuid.uuid1()))
+            base_test = BaseTest()
+            base_test.debug = True
+            ret = base_test.do_post(module, base_test.buildup_arguments(params))
+            data = base_test.process_response(ret.text)
+            print(data)
+            if data.code == 200:
+                print('========== 上传到生产成功 ==========')
+            else:
+                print('========== 上传到生产失败 ==========')
+        else:
+            print('========== 不上传至生产 ==========')

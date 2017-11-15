@@ -7,7 +7,6 @@ import re
 import json
 import hashlib
 import uuid
-import itertools
 from datetime import datetime
 from pyspider.libs.base_handler import *
 from model.resource.resource import ResourceRecord
@@ -47,10 +46,7 @@ class Handler(BaseHandler):
     # 每三天重爬
     @every(minutes=24 * 60 * 3)
     def on_start(self):
-        self.crawl(
-            self.first_page,
-            callback=self.get_page_num,
-            headers=GLOBAL_HEADERS)
+        self.crawl(self.first_page, callback=self.get_page_num)
 
     # age 一天内认为页面没有改变，不会再重新爬取，每天自动重爬
     # 获取页数
@@ -67,8 +63,7 @@ class Handler(BaseHandler):
         while self.page_num <= int(page_total):
             crawl_url = self.start_page + str(self.page_num)
             print(crawl_url)
-            self.crawl(
-                crawl_url, callback=self.index_page, headers=GLOBAL_HEADERS)
+            self.crawl(crawl_url, callback=self.index_page)
             self.page_num += 1
 
     # age 一天内认为页面没有改变，不会再重新爬取，每天自动重爬
@@ -78,9 +73,7 @@ class Handler(BaseHandler):
         for each in response.doc('.h3 > a').items():
             print(each.attr.href)
             self.crawl(
-                each.attr.href,
-                callback=self.detail_page,
-                headers=GLOBAL_HEADERS)
+                each.attr.href, fetch_type='js', callback=self.detail_page)
 
     # age 一天内认为页面没有改变，不会再重新爬取
     # 详情页
@@ -169,6 +162,10 @@ class Handler(BaseHandler):
     def get_download_info(self, res):
         # 电影原始名称 电视 赛车总动员 4.2 G 需要处理
         row_title = [i.text() for i in res.doc('.nm > span').items()]
+        # 格式化后的名称列表
+        # format_title = [
+        #     i.split(' ')[1] + '-' + i.split(' ')[3] for i in row_title
+        # ]
         # 格式化后的剧集名称列表，有国语粤语之分，size, download_link 一起放在 for 里面处理
         cantonese_title = []
         national_title = []
@@ -176,31 +173,32 @@ class Handler(BaseHandler):
         national_size = []
         cantonese_download_link = []
         national_download_link = []
-
+        download_button_list = [
+            i.children().attr.href for i in res.doc('.dlbutton1').items()
+        ]
         for k, i in enumerate(row_title):
             size_re = re.search(r"\d*\.\d*.?[G|GB|M|MB]", i)
             if size_re:
                 size = ''.join(size_re.group(0).split(' '))
             else:
                 size = ''
-
             cantonese_re = re.search(r"粤语", i)
-            title = i.split(' ')[1] + '-' + i.split(' ')[3].strip()
-            download_button_generator = res.doc('.dlbutton1').items()
-            if cantonese_re:
-                cantonese_title.append(title)
-                cantonese_size.append(size)
-                cantonese_download_link.append(
-                    next(
-                        itertools.islice(download_button_generator, k, k + 1))
-                    .children().attr.href)
+            # 标题变成 1 2 3 纯数字 电视剧和动漫变成数字，电影和综艺不变
+            episode_number_re = re.search(r"第(\d+)集", i)
+            if episode_number_re:
+                episode_number = episode_number_re.group(0)[1:-1]
             else:
-                national_title.append(title)
+                episode_number = i.split(' ')[1] + '-' + i.split(' ')[3]
+            # 带集数描述的title
+            # title =  i.split(' ')[1] + '-' + i.split(' ')[3]
+            if cantonese_re:
+                cantonese_title.append(episode_number)
+                cantonese_size.append(size)
+                cantonese_download_link.append(download_button_list[k])
+            else:
+                national_title.append(episode_number)
                 national_size.append(size)
-                national_download_link.append(
-                    next(
-                        itertools.islice(download_button_generator, k, k + 1))
-                    .children().attr.href)
+                national_download_link.append(download_button_list[k])
         return row_title, national_title, cantonese_title, national_size, cantonese_size, national_download_link, cantonese_download_link
 
     def format_brief_info(self, res):
@@ -442,13 +440,14 @@ class Handler(BaseHandler):
     def construct_final_download_json(self, item_json, mark):
         download_item_key = "url" + "_" + mark + "_download"
         self.final_json[download_item_key] = []
-        if 'national_title' in item_json[mark].keys(
-        ) and item_json[mark]['cantonese_title'] == []:
+        if 'national_title' in item_json[mark].keys() and item_json[mark][
+                'cantonese_title'] == []:
             title = '正片'
-        elif 'national_title' in item_json[
-                mark].keys() and item_json[mark]['cantonese_title'] != []:
+        elif 'national_title' in item_json[mark].keys() and item_json[mark][
+                'cantonese_title'] != []:
             title = '国语'
-        if 'national_title' in item_json[mark].keys() and item_json[mark]['national_title']:
+        if 'national_title' in item_json[mark].keys() and item_json[mark][
+                'national_title']:
             resource_tag_item = {}
             resource_tag_item['item_list'] = []
             resource_tag_item['title'] = title
@@ -460,7 +459,8 @@ class Handler(BaseHandler):
                     'national_download_link'][k]
                 resource_tag_item['item_list'].append(download_item)
             self.final_json[download_item_key].append(resource_tag_item)
-        if 'cantonese_title' in item_json[mark].keys() and item_json[mark]['cantonese_title']:
+        if 'cantonese_title' in item_json[mark].keys() and item_json[mark][
+                'cantonese_title']:
             resource_tag_item = {}
             resource_tag_item['item_list'] = []
             resource_tag_item['title'] = '粤语'
@@ -527,63 +527,47 @@ class Handler(BaseHandler):
 
         for i in final_json[download_item_key]:
             # 查询现有剧集，有新的才更新
-            if exist_record[download_item_key]:
-                item_list = exist_record[download_item_key].get(
-                    title=i['title'])['item_list']
-                if i['title'] == '国语' or i['title'] == '正片':
-                    self.deal_with_mongodb_update(exist_record, item_list, i,
-                                                  download_item_key)
-                elif i['title'] == '粤语':
-                    self.deal_with_mongodb_update(exist_record, item_list, i,
-                                                  download_item_key)
-            else:
-                if i['title'] == '国语' or i['title'] == '正片':
-                    self.deal_with_mongodb_update(exist_record, None, i,
-                                                  download_item_key)
-                elif i['title'] == '粤语':
-                    self.deal_with_mongodb_update(exist_record, None, i,
-                                                  download_item_key)
-
-    def deal_with_mongodb_update(self, exist_record, item_list, i,
-                                 download_item_key):
-        if item_list:
-            episode_length = item_list.count()
-            print('episode_length ' + i['title'] + ' 现有剧集数 ========== ' + str(
-                episode_length))
-            for j in i['item_list']:
-                if episode_length != 0:
-                    exist_episode = item_list.filter(title=j['title'])
-                    if exist_episode:
-                        print('========== ' + j['title'] + ' ========== ' +
-                              '这一集已存在')
+            if list(exist_record[download_item_key]):
+                resource_tag_item = exist_record[download_item_key].filter(
+                    title=i['title']).first()
+                episode_length = resource_tag_item['item_list'].count()
+                # print('episode_length ' + i['title'] + ' 现有剧集数 ========== ' +
+                      # str(episode_length))
+                for j in i['item_list']:
+                    if episode_length != 0:
+                        exist_episode = resource_tag_item['item_list'].filter(
+                            title=j['title'])
+                        if exist_episode:
+                            print('========== ' + j['title'] + ' ========== ' +
+                                  '这一集已存在')
+                        else:
+                            item_list_item = ResourceDownloadItem(
+                                title=j['title'], url=j['url'], size=j['size'])
+                            resource_tag_item['item_list'].append(
+                                item_list_item)
+                            exist_record[download_item_key].append(
+                                resource_tag_item)
+                            exist_record.save()
+                            print('========== ' + j['title'] + ' ========== ' +
+                                  '新剧集')
                     else:
-                        exist_tag_item = exist_record[download_item_key].get(
-                            title=i['title'])
                         item_list_item = ResourceDownloadItem(
                             title=j['title'], url=j['url'], size=j['size'])
-                        exist_tag_item['item_list'].append(item_list_item)
-                        exist_record[download_item_key].append(exist_tag_item)
+                        resource_tag_item['item_list'].append(item_list_item)
+                        exist_record[download_item_key].append(
+                            resource_tag_item)
                         exist_record.save()
                         print('========== ' + j['title'] + ' ========== ' +
                               '新剧集')
-                else:
-                    exist_tag_item = exist_record[download_item_key].get(
-                        title=i['title'])
-                    item_list_item = ResourceDownloadItem(
-                        title=j['title'], url=j['url'], size=j['size'])
-                    exist_tag_item['item_list'].append(item_list_item)
-                    exist_record[download_item_key].append(exist_tag_item)
-                    exist_record.save()
-                    print('========== ' + j['title'] + ' ========== ' + '新剧集')
-        else:
-            for j in i['item_list']:
+            else:
                 resource_tag_item = ResourceTagItem(title=i['title'])
-                resource_download_item = ResourceDownloadItem(
-                    title=j['title'], size=j['size'], url=j['url'])
-                resource_tag_item['item_list'].append(resource_download_item)
-
-            exist_record[download_item_key].append(resource_tag_item)
-            exist_record.save()
+                for j in i['item_list']:
+                    resource_download_item = ResourceDownloadItem(
+                        title=j['title'], size=j['size'], url=j['url'])
+                    resource_tag_item['item_list'].append(
+                        resource_download_item)
+                exist_record[download_item_key].append(resource_tag_item)
+                exist_record.save()
 
     def update_to_production(self, resource):
         print('========== 开始上传至生产 ==========')

@@ -188,15 +188,23 @@ class Handler(BaseHandler):
                 size = ''
             cantonese_re = re.search(r"粤语", i)
             # 带集数描述的title
-            title =  i.split(' ')[1]
+            title = i.split(' ')[1]
+
+            # 没有迅雷按钮 判断标题上的链接是否是 '#'，是 '#' 再罝未 ''
+            if len(download_button_list) != len(row_title):
+                if i.children().attr.href == '#':
+                    download_link = ''
+            else:
+                download_link = download_button_list[k]
+
             if cantonese_re:
                 cantonese_title.append(title)
                 cantonese_size.append(size)
-                cantonese_download_link.append(download_button_list[k])
+                cantonese_download_link.append(download_link)
             else:
                 national_title.append(title)
                 national_size.append(size)
-                national_download_link.append(download_button_list[k])
+                national_download_link.append(download_link)
         return row_title, national_title, cantonese_title, national_size, cantonese_size, national_download_link, cantonese_download_link
 
     def format_brief_info(self, res):

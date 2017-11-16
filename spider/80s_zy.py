@@ -192,8 +192,7 @@ class Handler(BaseHandler):
 
             # 没有迅雷按钮 判断标题上的链接是否是 '#'，是 '#' 再罝未 ''
             if len(download_button_list) != len(row_title):
-                if i.children().attr.href == '#':
-                    download_link = ''
+                download_link = ''
             else:
                 download_link = download_button_list[k]
 
@@ -292,8 +291,7 @@ class Handler(BaseHandler):
                 updated_at = i.split('： ')[1]
             elif re.search(r"豆瓣评分", i):
                 douban_rate = i.split('： ')[1]
-        if span_block_link:
-            douban_comment_link = span_block_link[-1]
+                douban_comment_link = span_block_link[-1]
         if len(res.doc('#movie_content').text()) == 5:
             movie_content = ''
         else:
@@ -391,7 +389,8 @@ class Handler(BaseHandler):
 
     def construct_final_json(self, item_json, res):
         m = hashlib.md5()
-        m.update(res.url.encode('utf-8'))
+        md5_string = ResourceSource._80s + '/' + res.url.split('/')[-1]
+        m.update(md5_string.encode('utf-8'))
         self.final_json["rtype"] = "综艺"
         self.final_json["hash"] = m.hexdigest()
         self.final_json["url_source"] = res.url
@@ -405,7 +404,7 @@ class Handler(BaseHandler):
         self.final_json["show_release_time"] = item_json["created_at"]
         self.final_json["show_update_time"] = item_json["updated_at"]
         if item_json["douban_rate"] == '暂无':
-            self.final_json["score"] == '0'
+            self.final_json["score"] = '0'
         else:
             self.final_json["score"] = item_json["douban_rate"]
         self.final_json["actors"] = item_json["actors"]
@@ -520,35 +519,45 @@ class Handler(BaseHandler):
             if list(exist_record[download_item_key]):
                 resource_tag_item = exist_record[download_item_key].filter(
                     title=i['title']).first()
-                episode_length = resource_tag_item['item_list'].count()
-                # print('episode_length ' + i['title'] + ' 现有剧集数 ========== ' +
-                      # str(episode_length))
-                for j in i['item_list']:
-                    if episode_length != 0:
-                        exist_episode = resource_tag_item['item_list'].filter(
-                            title=j['title'])
-                        if exist_episode:
-                            print('========== ' + j['title'] + ' ========== ' +
-                                  '这一集已存在')
+                if resource_tag_item:
+                    episode_length = resource_tag_item['item_list'].count()
+                    # print('episode_length ' + i['title'] + ' 现有剧集数 ========== ' +
+                          # str(episode_length))
+                    for j in i['item_list']:
+                        if episode_length != 0:
+                            exist_episode = resource_tag_item['item_list'].filter(
+                                title=j['title'])
+                            if exist_episode:
+                                print('========== ' + j['title'] + ' ========== ' +
+                                      '这一集已存在')
+                            else:
+                                item_list_item = ResourceDownloadItem(
+                                    title=j['title'], url=j['url'], size=j['size'])
+                                resource_tag_item['item_list'].append(
+                                    item_list_item)
+                                exist_record[download_item_key].append(
+                                    resource_tag_item)
+                                exist_record.save()
+                                print('========== ' + j['title'] + ' ========== ' +
+                                      '新剧集')
                         else:
                             item_list_item = ResourceDownloadItem(
                                 title=j['title'], url=j['url'], size=j['size'])
-                            resource_tag_item['item_list'].append(
-                                item_list_item)
+                            resource_tag_item['item_list'].append(item_list_item)
                             exist_record[download_item_key].append(
                                 resource_tag_item)
                             exist_record.save()
                             print('========== ' + j['title'] + ' ========== ' +
                                   '新剧集')
-                    else:
-                        item_list_item = ResourceDownloadItem(
-                            title=j['title'], url=j['url'], size=j['size'])
-                        resource_tag_item['item_list'].append(item_list_item)
-                        exist_record[download_item_key].append(
-                            resource_tag_item)
-                        exist_record.save()
-                        print('========== ' + j['title'] + ' ========== ' +
-                              '新剧集')
+                else:
+                    resource_tag_item = ResourceTagItem(title=i['title'])
+                    for j in i['item_list']:
+                        resource_download_item = ResourceDownloadItem(
+                            title=j['title'], size=j['size'], url=j['url'])
+                        resource_tag_item['item_list'].append(
+                            resource_download_item)
+                    exist_record[download_item_key].append(resource_tag_item)
+                    exist_record.save()
             else:
                 resource_tag_item = ResourceTagItem(title=i['title'])
                 for j in i['item_list']:

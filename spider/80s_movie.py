@@ -99,7 +99,7 @@ class Handler(BaseHandler):
 
         # 第一个 tab bt 直接能解析，其他的 tab 需要爬单独的 html 再解析
         # http://www.80s.tw/movie/1173/bt-1 bd-1 hd-1
-        mark_re = re.search(r"电视|平板|手机",
+        mark_re = re.search(r"电视|平板|手机|小MP4",
                             response.doc('.dlselected > span').text())
         mark = ''
         self.final_json["url_has_downlaod"] = []
@@ -110,6 +110,8 @@ class Handler(BaseHandler):
                 mark = 'bd'
             elif mark_re.group(0) == '手机':
                 mark = 'hd'
+            elif mark_re.group(0) == '小MP4':
+                mark = 'pt'
         self.final_json["url_has_downlaod"].append(mark)
 
         if mark:
@@ -128,10 +130,13 @@ class Handler(BaseHandler):
             tab_text = response.doc('.cpage').text()
             bd_re = re.search(r"平板", tab_text)
             hd_re = re.search(r"手机", tab_text)
+            pt_re = re.search(r"小MP4", tab_text)
             if bd_re and mark != 'bd':
                 self.crawl(response.url + "/bd-1", callback=self.get_bd_info)
             elif hd_re and mark != 'hd':
                 self.crawl(response.url + "/hd-1", callback=self.get_hd_info)
+            elif pt_re and mark != 'pt':
+                self.crawl(response.url + "/mp4-1", callback=self.get_pt_info)
 
             return {
                 "url": response.url,
@@ -151,6 +156,10 @@ class Handler(BaseHandler):
     @config(age=24 * 60 * 60, auto_recrawl=True, priority=3)
     def get_hd_info(self, response):
         self.crawl_download_info(response, 'hd')
+
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=3)
+    def get_pt_info(self, response):
+        self.crawl_download_info(response, 'pt')
 
     def crawl_download_info(self, response, mark):
         if response.status_code == 200:

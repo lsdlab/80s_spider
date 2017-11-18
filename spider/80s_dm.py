@@ -192,19 +192,20 @@ class Handler(BaseHandler):
             cantonese_re = re.search(r"粤语", i)
             # 标题变成 1 2 3 纯数字
             episode_number_re = re.search(r"第(\d+)集", i)
+            episode_range_number_re = re.search(r"第(\d+-\d+)集", i)
             if episode_number_re:
                 episode_number = episode_number_re.group(0)[1:-1]
+            elif episode_range_number_re:
+                episode_number = episode_range_number_re.group(0)[1:-1]
             else:
                 episode_number = i.split(' ')[1] + '-' + i.split(' ')[3]
             # 带集数描述的title
             # title =  i.split(' ')[1] + '-' + i.split(' ')[3]
-
             # 没有迅雷按钮 判断标题上的链接是否是 '#'，是 '#' 再罝未 ''
             if len(download_button_list) != len(row_title):
                 download_link = ''
             else:
                 download_link = download_button_list[k]
-
             if cantonese_re:
                 cantonese_title.append(episode_number)
                 cantonese_size.append(size)
@@ -267,7 +268,7 @@ class Handler(BaseHandler):
         return title, year, latest_update, update_period, special_list, special_list_link, other_names, actors, actors_link, header_img_link, screenshot_link
 
     def format_detail_info(self, res):
-        type, type_link, region, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = '', '', '', '', '', '', '', '', '', '', ''
+        type, region, directors, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content = '', '', '', '', '', '', '', '', ''
         # 类型、地区、语言、剧情介绍等信息的字符串列表和链接
         span_block = [i.text() for i in res.doc('.span_block').items()]
         span_block_link = [
@@ -281,12 +282,9 @@ class Handler(BaseHandler):
             if re.search(r"类型", i):
                 type_list = i.split('： ')[1].split(' ')
                 type = '|'.join(type_list)
-                type_link = span_block_link[:len(type_list)]
             elif re.search(r"导演", i):
                 # 导演可有可无
                 directors = '|'.join(i.split('： ')[1].split(' '))
-                directors_link = span_block_link[len(type_list):len(type_list)
-                                                 + 1]
             elif re.search(r"地区", i):
                 if len(i) > 10:
                     region = re.sub('[\s+]', ' ', i)
@@ -309,7 +307,7 @@ class Handler(BaseHandler):
         else:
             movie_content = res.doc('#movie_content').text().split('： ')[
                 1].strip()
-        return type, type_link, region, directors, directors_link, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content
+        return type, region, directors, created_at, updated_at, item_length, douban_rate, douban_comment_link, movie_content
 
     def construct_brief_json(self, *args):
         self.item_json["title"] = args[0][0]
@@ -345,16 +343,14 @@ class Handler(BaseHandler):
 
     def construct_detail_json(self, *args):
         self.item_json["type"] = args[0][0]
-        self.item_json["type_link"] = args[0][1]
-        self.item_json["region"] = args[0][2]
-        self.item_json["directors"] = args[0][3]
-        self.item_json["directors_link"] = args[0][4]
-        self.item_json["created_at"] = args[0][5]
-        self.item_json["updated_at"] = args[0][6]
-        self.item_json["item_length"] = args[0][7]
-        self.item_json["douban_rate"] = args[0][8]
-        self.item_json["douban_comment_link"] = args[0][9]
-        self.item_json["movie_content"] = args[0][10]
+        self.item_json["region"] = args[0][1]
+        self.item_json["directors"] = args[0][2]
+        self.item_json["created_at"] = args[0][3]
+        self.item_json["updated_at"] = args[0][4]
+        self.item_json["item_length"] = args[0][5]
+        self.item_json["douban_rate"] = args[0][6]
+        self.item_json["douban_comment_link"] = args[0][7]
+        self.item_json["movie_content"] = args[0][8]
 
     def construct_download_json(self, *args, **kwargs):
         mark = kwargs['mark']

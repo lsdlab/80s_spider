@@ -86,19 +86,14 @@ class Handler(BaseHandler):
             final_json = construct_final_json(resource_item, response.url)
 
         # 第一个 tab bt 直接能解析，其他的 tab 需要爬单独的 html 再解析
-        # http://www.80s.tw/zy/1173/bt-1 bd-1 hd-1
+        # http://www.80s.tw/movie/1173/bt-1 bd-1 hd-1
         mark = get_mark(response.doc('.dlselected > span').text())
         final_json["url_has_downlaod"] = []
         final_json["url_has_downlaod"].append(mark)
 
         if mark:
-            # 构建第一个下载页面的 JSON 信息
-            first_tab_download_info = get_download_info(response, 'zy')
-            download_json = construct_download_json(
-                first_tab_download_info, mark=mark)
             if WRITE_MONGODB:
-                download_json_final = construct_final_download_json(
-                    download_json, mark)
+                download_json_final = get_download_info(response, 'zy', mark)
                 final_json = {**final_json, **download_json_final}
                 write_to_mongodb(final_json, mark)
 
@@ -125,7 +120,6 @@ class Handler(BaseHandler):
                     headers=generate_random_headers(),
                     callback=self.get_pt_info,
                     save={'resource_item': resource_item})
-
             return {
                 "url": response.url,
                 "title": response.doc('.font14w').text(),
@@ -153,12 +147,8 @@ class Handler(BaseHandler):
                                  response.save['resource_item'])
 
     def crawl_download_info(self, response, mark, resource_item):
-        tab_download_info = get_download_info(response, 'zy')
-        download_json = construct_download_json(
-            tab_download_info, mark=mark)
         if WRITE_MONGODB:
-            download_json_final = construct_final_download_json(
-                download_json, mark)
+            download_json_final = get_download_info(response, 'zy', mark)
             url_source = response.url
             update_download_info_to_mongodb(download_json_final, mark,
                                             url_source)

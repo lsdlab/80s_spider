@@ -1,70 +1,50 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
-# Created on 2017-11-03 10:56:36
-# Project: 80s_movie
+# Created on 2017-11-21 10:21:37
+# Project: 80s_daily
 
 import re
 from pyspider.libs.base_handler import *
 from spider.utils import *
-
-
-FIRST_PAGE = 'http://www.80s.tw/movie/list'
-START_PAGE = 'http://www.80s.tw/movie/list/-----p'
-PAGE_NUM = 1
-PAGE_TOTAL = 408
 WRITE_MONGODB = True
+
+UPDATE = {
+    "movie": "http://www.80s.tw/top/last_update_list/1",
+    "ju": "http://www.80s.tw/top/last_update_list/tv",
+    "dm": "http://www.80s.tw/top/last_update_list/14",
+    "zy": "http://www.80s.tw/top/last_update_list/4"
+}
 
 
 class Handler(BaseHandler):
     crawl_config = {}
 
-    def __init__(self):
-        self.first_page = FIRST_PAGE
-        self.start_page = START_PAGE
-        self.page_num = PAGE_NUM
-        self.page_total = PAGE_TOTAL
-
-    # 每三天重爬
-    @every(minutes=24 * 60 * 5)
+    # 一天
+    @every(minutes=24 * 60)
     def on_start(self):
-        self.crawl(
-            self.first_page,
-            headers=generate_random_headers(),
-            callback=self.get_page_num)
-
-    # age 一天内认为页面没有改变，不会再重新爬取，每天自动重爬
-    # 获取页数
-    @config(age=24 * 60 * 60, auto_recrawl=True, priority=1, retries=1)
-    def get_page_num(self, response):
-        pager_list = [i.attr.href for i in response.doc('.pager > a').items()]
-        page_total_url = pager_list[-1:][0]
-        page_total_re = re.search(r"p(\d+)", page_total_url)
-        if page_total_re:
-            page_total = page_total_re.group(0)[1:]
-        else:
-            page_total = self.page_total
-        print('总页数 ========== ' + str(page_total))
-        while self.page_num <= int(page_total):
-            crawl_url = self.start_page + str(self.page_num)
-            print(crawl_url)
+        for rtype, url in UPDATE.items():
             self.crawl(
-                crawl_url,
+                url,
                 headers=generate_random_headers(),
-                callback=self.index_page)
-            self.page_num += 1
+                callback=self.list_page,
+                save={'rtype': rtype})
 
-    # age 一天内认为页面没有改变，不会再重新爬取，每天自动重爬
-    # 列表页
-    @config(age=24 * 60 * 60, auto_recrawl=True, priority=1, retries=1)
-    def index_page(self, response):
-        for each in response.doc('.h3 > a').items():
-            if each.attr.href.split('/')[-2:-1] == ['movie']:
-                print(each.attr.href)
+    @config(age=10 * 24 * 60 * 60, priority=1, retries=1)
+    def list_page(self, response):
+        # 只取十个就够了
+        newest_ten_url = [
+            i.attr.href for i in response.doc('.tpul1line a').items()
+        ][:10]
+        for i in newest_ten_url:
+            if i.split('/')[-2:-1] == [response.save['rtype']]:
+                print(i)
                 self.crawl(
-                    each.attr.href,
+                    i,
                     fetch_type='js',
+                    load_images=True,
                     headers=generate_random_headers(),
-                    callback=self.detail_page)
+                    callback=self.detail_page,
+                    save={'rtype': response.save['rtype']})
 
     # age 一天内认为页面没有改变，不会再重新爬取
     # 详情页
@@ -75,7 +55,7 @@ class Handler(BaseHandler):
         resource_item["url"] = response.url
         resource_item["title"] = response.doc('title').text()
         # 构建两块信息
-        brief_info = format_brief_info(response, 'movie')
+        brief_info = format_brief_info(response, response.save['rtype'])
         resource_brief = construct_brief_json(brief_info)
         detail_info = format_detail_info(response)
         resource_detail = construct_detail_json(detail_info)
@@ -93,7 +73,8 @@ class Handler(BaseHandler):
 
         if mark:
             if WRITE_MONGODB:
-                download_json_final = get_download_info(response, 'movie', mark)
+                download_json_final = get_download_info(
+                    response, response.save['rtype'], mark)
                 final_json = {**final_json, **download_json_final}
                 write_to_mongodb(final_json, mark)
 
@@ -108,25 +89,37 @@ class Handler(BaseHandler):
                     response.url + "/bt-1",
                     headers=generate_random_headers(),
                     callback=self.get_bt_info,
-                    save={'resource_item': resource_item})
+                    save={
+                        'resource_item': resource_item,
+                        'rtype': response.save['rtype']
+                    })
             if bd_re and mark != 'bd':
                 self.crawl(
                     response.url + "/bd-1",
                     headers=generate_random_headers(),
                     callback=self.get_bd_info,
-                    save={'resource_item': resource_item})
+                    save={
+                        'resource_item': resource_item,
+                        'rtype': response.save['rtype']
+                    })
             elif hd_re and mark != 'hd':
                 self.crawl(
                     response.url + "/hd-1",
                     headers=generate_random_headers(),
                     callback=self.get_hd_info,
-                    save={'resource_item': resource_item})
+                    save={
+                        'resource_item': resource_item,
+                        'rtype': response.save['rtype']
+                    })
             elif pt_re and mark != 'pt':
                 self.crawl(
                     response.url + "/mp4-1",
                     headers=generate_random_headers(),
                     callback=self.get_pt_info,
-                    save={'resource_item': resource_item})
+                    save={
+                        'resource_item': resource_item,
+                        'rtype': response.save['rtype']
+                    })
             return {
                 "url": response.url,
                 "title": response.doc('.font14w').text(),
@@ -162,7 +155,8 @@ class Handler(BaseHandler):
 
     def crawl_download_info(self, response, mark, resource_item):
         if WRITE_MONGODB:
-            download_json_final = get_download_info(response, 'movie', mark)
+            download_json_final = get_download_info(
+                response, response.save['rtype'], mark)
             url_source = response.url
             update_download_info_to_mongodb(download_json_final, mark,
                                             url_source)

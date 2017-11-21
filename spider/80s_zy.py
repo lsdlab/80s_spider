@@ -34,7 +34,7 @@ class Handler(BaseHandler):
 
     # age 一天内认为页面没有改变，不会再重新爬取，每天自动重爬
     # 获取页数
-    @config(age=24 * 60 * 60, auto_recrawl=True, priority=1)
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=1, retries=1)
     def get_page_num(self, response):
         pager_list = [i.attr.href for i in response.doc('.pager > a').items()]
         page_total_url = pager_list[-1:][0]
@@ -55,7 +55,7 @@ class Handler(BaseHandler):
 
     # age 一天内认为页面没有改变，不会再重新爬取，每天自动重爬
     # 列表页
-    @config(age=24 * 60 * 60, auto_recrawl=True, priority=1)
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=1, retries=1)
     def index_page(self, response):
         for each in response.doc('.h3 > a').items():
             if each.attr.href.split('/')[-2:-1] == ['zy']:
@@ -68,7 +68,7 @@ class Handler(BaseHandler):
 
     # age 一天内认为页面没有改变，不会再重新爬取
     # 详情页
-    @config(age=24 * 60 * 60, auto_recrawl=True, priority=2)
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=2, retries=1)
     def detail_page(self, response):
         resource_item = {}
         final_json = {}
@@ -99,9 +99,16 @@ class Handler(BaseHandler):
 
             # 另外两种大小，可有可无
             tab_text = response.doc('.cpage').text()
+            bt_re = re.search(r"电视", tab_text)
             bd_re = re.search(r"平板", tab_text)
             hd_re = re.search(r"手机", tab_text)
             pt_re = re.search(r"小MP4", tab_text)
+            if bt_re and mark != 'bt':
+                self.crawl(
+                    response.url + "/bt-1",
+                    headers=generate_random_headers(),
+                    callback=self.get_bt_info,
+                    save={'resource_item': resource_item})
             if bd_re and mark != 'bd':
                 self.crawl(
                     response.url + "/bd-1",
@@ -128,20 +135,27 @@ class Handler(BaseHandler):
             print('========== 处理错误，没有得到下载信息 ==========')
 
     # age 一天内认为页面没有改变，不会再重新爬取
+    # 爬取 bt
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=3, retries=1)
+    def get_bt_info(self, response):
+        self.crawl_download_info(response, 'bt',
+                                 response.save['resource_item'])
+
+    # age 一天内认为页面没有改变，不会再重新爬取
     # 爬取 bd
-    @config(age=24 * 60 * 60, auto_recrawl=True, priority=3)
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=3, retries=1)
     def get_bd_info(self, response):
         self.crawl_download_info(response, 'bd',
                                  response.save['resource_item'])
 
     # age 一天内认为页面没有改变，不会再重新爬取
     # 爬取 hd
-    @config(age=24 * 60 * 60, auto_recrawl=True, priority=3)
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=3, retries=1)
     def get_hd_info(self, response):
         self.crawl_download_info(response, 'hd',
                                  response.save['resource_item'])
 
-    @config(age=24 * 60 * 60, auto_recrawl=True, priority=3)
+    @config(age=24 * 60 * 60, auto_recrawl=True, priority=3, retries=1)
     def get_pt_info(self, response):
         self.crawl_download_info(response, 'pt',
                                  response.save['resource_item'])

@@ -31,15 +31,11 @@ class Handler(BaseHandler):
 
     @config(age=10 * 24 * 60 * 60, priority=1, retries=1)
     def list_page(self, response):
-        # 只取十个就够了
-        newest_ten_url = [
-            i.attr.href for i in response.doc('.tpul1line a').items()
-        ][:10]
-        for i in newest_ten_url:
-            if i.split('/')[-2:-1] == [response.save['rtype']]:
-                print(i)
+        for i in response.doc('.tpul1line a').items():
+            if i.attr.href.split('/')[-2:-1] == [response.save['rtype']]:
+                print(i.attr.href)
                 self.crawl(
-                    i,
+                    i.attr.href,
                     fetch_type='js',
                     load_images=True,
                     headers=generate_random_headers(),

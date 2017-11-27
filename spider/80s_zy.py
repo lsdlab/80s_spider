@@ -6,6 +6,7 @@
 import re
 from pyspider.libs.base_handler import *
 from spider.utils import *
+from config.db import init_db
 
 
 FIRST_PAGE = 'http://www.80s.tw/zy/list'
@@ -23,6 +24,7 @@ class Handler(BaseHandler):
         self.start_page = START_PAGE
         self.page_num = PAGE_NUM
         self.page_total = PAGE_TOTAL
+        init_db()
 
     # 每三天重爬
     @every(minutes=24 * 60 * 5)

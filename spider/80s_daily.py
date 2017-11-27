@@ -6,7 +6,8 @@
 import re
 from pyspider.libs.base_handler import *
 from spider.utils import *
-WRITE_MONGODB = True
+from config.db import init_db
+
 
 UPDATE = {
     "movie": "http://www.80s.tw/top/last_update_list/1",
@@ -14,10 +15,14 @@ UPDATE = {
     "dm": "http://www.80s.tw/top/last_update_list/14",
     "zy": "http://www.80s.tw/top/last_update_list/4"
 }
+WRITE_MONGODB = True
 
 
 class Handler(BaseHandler):
     crawl_config = {}
+
+    def __init__(self):
+        init_db()
 
     # 一天
     @every(minutes=24 * 60)

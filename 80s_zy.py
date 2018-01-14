@@ -1,18 +1,17 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 # Created on 2017-11-01 14:44:52
-# Project: 80s_dm
+# Project: 80s_zy
 
 import re
 from pyspider.libs.base_handler import *
-from spider.utils import *
-from config.db import init_db
+from utils import *
 
 
-FIRST_PAGE = 'http://www.80s.tw/dm/list'
-START_PAGE = 'http://www.80s.tw/dm/list/----14--p'
+FIRST_PAGE = 'https://www.80s.tw/zy/list'
+START_PAGE = 'https://www.80s.tw/zy/list/----4--p'
 PAGE_NUM = 1
-PAGE_TOTAL = 61
+PAGE_TOTAL = 17
 WRITE_MONGODB = True
 
 
@@ -24,13 +23,13 @@ class Handler(BaseHandler):
         self.start_page = START_PAGE
         self.page_num = PAGE_NUM
         self.page_total = PAGE_TOTAL
-        init_db()
 
-    # 每三天重爬
+    # 每五天重爬
     @every(minutes=24 * 60 * 5)
     def on_start(self):
         self.crawl(
             self.first_page,
+            validate_cert=False,
             headers=generate_random_headers(),
             callback=self.get_page_num)
 
@@ -51,6 +50,7 @@ class Handler(BaseHandler):
             print(crawl_url)
             self.crawl(
                 crawl_url,
+                validate_cert=False,
                 headers=generate_random_headers(),
                 callback=self.index_page)
             self.page_num += 1
@@ -60,11 +60,11 @@ class Handler(BaseHandler):
     @config(age=24 * 60 * 60, auto_recrawl=True, priority=1, retries=1)
     def index_page(self, response):
         for each in response.doc('.h3 > a').items():
-            if each.attr.href.split('/')[-2:-1] == ['dm']:
+            if each.attr.href.split('/')[-2:-1] == ['zy']:
                 print(each.attr.href)
                 self.crawl(
                     each.attr.href,
-                    fetch_type='js',
+                    validate_cert=False,
                     headers=generate_random_headers(),
                     callback=self.detail_page)
 
@@ -77,7 +77,7 @@ class Handler(BaseHandler):
         resource_item["url"] = response.url
         resource_item["title"] = response.doc('title').text()
         # 构建两块信息
-        brief_info = format_brief_info(response, 'dm')
+        brief_info = format_brief_info(response, 'zy')
         resource_brief = construct_brief_json(brief_info)
         detail_info = format_detail_info(response)
         resource_detail = construct_detail_json(detail_info)
@@ -95,7 +95,7 @@ class Handler(BaseHandler):
 
         if mark:
             if WRITE_MONGODB:
-                download_json_final = get_download_info(response, 'dm', mark)
+                download_json_final = get_download_info(response, 'zy', mark)
                 final_json = {**final_json, **download_json_final}
                 write_to_mongodb(final_json, mark)
 
@@ -108,24 +108,28 @@ class Handler(BaseHandler):
             if bt_re and mark != 'bt':
                 self.crawl(
                     response.url + "/bt-1",
+                    validate_cert=False,
                     headers=generate_random_headers(),
                     callback=self.get_bt_info,
                     save={'resource_item': resource_item})
             if bd_re and mark != 'bd':
                 self.crawl(
                     response.url + "/bd-1",
+                    validate_cert=False,
                     headers=generate_random_headers(),
                     callback=self.get_bd_info,
                     save={'resource_item': resource_item})
             elif hd_re and mark != 'hd':
                 self.crawl(
                     response.url + "/hd-1",
+                    validate_cert=False,
                     headers=generate_random_headers(),
                     callback=self.get_hd_info,
                     save={'resource_item': resource_item})
             elif pt_re and mark != 'pt':
                 self.crawl(
                     response.url + "/mp4-1",
+                    validate_cert=False,
                     headers=generate_random_headers(),
                     callback=self.get_pt_info,
                     save={'resource_item': resource_item})
@@ -164,7 +168,7 @@ class Handler(BaseHandler):
 
     def crawl_download_info(self, response, mark, resource_item):
         if WRITE_MONGODB:
-            download_json_final = get_download_info(response, 'dm', mark)
+            download_json_final = get_download_info(response, 'zy', mark)
             url_source = response.url
             update_download_info_to_mongodb(download_json_final, mark,
                                             url_source)

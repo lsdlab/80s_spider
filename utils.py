@@ -6,16 +6,6 @@ from model.resource import ResourceSource
 from model.resource import ResourceDownloadItem
 from model.resource import ResourceTagItem
 from fake_useragent import UserAgent
-import logging
-logger = logging.getLogger('mylogger')
-logger.setLevel(logging.DEBUG)
-fh = logging.FileHandler('spider.log')
-fh.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-fh.setFormatter(formatter)
-logger.addHandler(fh)
-
-
 from mongoengine import connect
 
 databases = [
@@ -28,6 +18,7 @@ for database in databases:
         db=database['name'],
         host=database['host'],
         port=database['port'])
+
 
 # 处理上半部分信息
 def format_brief_info(res, rtype):
@@ -409,6 +400,7 @@ def update_download_info_to_mongodb(final_json, mark, url):
         exist_record = update_detail_download_info_to_mongodb(exist_record,
                                                               mark, final_json)
 
+
 # 更新下载信息
 def update_detail_download_info_to_mongodb(exist_record, mark, final_json):
     download_item_key = 'url' + '_' + mark + '_download'
@@ -431,6 +423,7 @@ def update_detail_download_info_to_mongodb(exist_record, mark, final_json):
     exist_record.__setitem__(download_item_key, _list)
     exist_record.save()
     return exist_record
+
 
 # 生成随机 user-agent headers
 def generate_random_headers():

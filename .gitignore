@@ -1,2 +1,6 @@
-/data/*
-*.log
+/data/task.db
+/data/scheduler.all
+/data/scheduler.1h
+/data/scheduler.1d
+/data/result.db
+/data/project.db

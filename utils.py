@@ -380,9 +380,6 @@ def write_to_mongodb(final_json, mark):
         print(
             '========== 资源已存在，更新基本信息(副标题和最新更新描述 current 和 total)和第一页的剧集更新（如果有更新的话） '
             + final_json['url_source'] + ' ==========')
-        # 更新至线上 MongoDB
-        update_to_production(exist_record)
-
 
 # 更新新的剧集下载信息进去
 def update_download_info_to_mongodb(final_json, mark, url):

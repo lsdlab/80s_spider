@@ -16,7 +16,7 @@ pyspider --config config.json
 ```
 
 
-![mongodb](https://cl.ly/032J2P3l3K2U/download/Screen%20Shot%202018-01-15%20at%2002.30.24.png)
+![](http://breakwire.oss-cn-shanghai.aliyuncs.com/Screen%20Shot%202018-01-15%20at%2002.30.24.png)
 
 先爬一遍整站的话成功率在 94% 左右，电影、电视剧、综艺基本都爬下来了，动漫的失败率最高，应该是数据解析处理没有完全考虑到位。
 
